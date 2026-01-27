@@ -66,8 +66,9 @@ credentials.json
 librealsense-2.55/
 librealsense-2.55.tar.gz
 
-# Claude
-.claude/
+# Claude (allow CLAUDE.md for documentation)
+.claude/*
+!.claude/CLAUDE.md
 
 # ROS logs
 .ros/
