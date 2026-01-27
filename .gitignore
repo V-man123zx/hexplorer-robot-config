@@ -1,0 +1,78 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+ENV/
+env/
+
+# ROS2
+log/
+install/
+build/
+.colcon/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+/tmp/
+
+# Compiled files
+*.o
+*.a
+*.pyc
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets - NEVER commit these
+.env
+*.pem
+*.key
+credentials.json
+*_secret*
+*_token*
+
+# Large files
+*.bag
+*.db3
+*.mcap
+librealsense-2.55/
+librealsense-2.55.tar.gz
+
+# Claude
+.claude/
+
+# ROS logs
+.ros/
+
+# Build artifacts
+robot_controller_release/ros2_packages/*/build/
+robot_controller_release/ros2_packages/*/install/
+robot_controller_release/ros2_packages/*/log/
