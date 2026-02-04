@@ -549,34 +549,46 @@ The camera optical frame needs rotation to align with LiDAR frame:
 
 ## XRDP Remote Desktop Setup (2026-01-28)
 
-### Connection Details
+### Connection Methods
 
+#### Option 1: WiFi (RECOMMENDED for robot operation)
 | Setting | Value |
 |---------|-------|
-| **WiFi IP Address** | 172.16.151.110 |
+| **IP Address** | 192.168.0.91 |
 | **Protocol** | RDP (port 3389) |
 | **Username** | robot |
 
-### How to Connect from Windows
+**Safe for robot operation** - uses separate WiFi network, does not interfere with motor control.
 
-1. Open **Remote Desktop Connection** (mstsc.exe)
-2. Enter `172.16.151.110`
-3. Click Connect
-4. Login with username `robot` and password
+#### Option 2: Wired via Jetson (NOT RECOMMENDED)
+| Setting | Value |
+|---------|-------|
+| **IP Address** | 192.168.1.20 (Jetson) |
+| **Protocol** | RDP via SSH tunnel or direct |
+
+**WARNING: CAUSES ROBOT CONTROL FAILURES!**
+- RDP traffic competes with real-time UDP motor commands on same network
+- Causes UDP packet loss/timeouts → watchdog triggers → safety damping mode
+- Symptoms: Robot stands up then immediately goes limp with `COMM ERROR motor id 0` in logs
 
 ### Network Interfaces
 
 | Interface | IP Address | Purpose |
 |-----------|------------|---------|
-| enp2s0 (Ethernet) | 192.168.1.10 | Robot control network |
-| wlo1 (WiFi) | 172.16.151.110 | Remote desktop access |
+| enp2s0 (Ethernet) | 192.168.1.10 | Robot control network (KEEP CLEAR) |
+| wlo1 (WiFi) | 192.168.0.91 | Remote desktop access (USE THIS) |
 
-### Project Impact
+### CRITICAL: Network Separation
 
-RDP over WiFi does **not** interfere with robot operations:
-- Robot traffic uses **wired ethernet** (192.168.1.x)
-- RDP uses **WiFi** (172.16.151.x)
-- Separate network paths
+The robot motor controller requires **dedicated bandwidth** on 192.168.1.x network:
+- Motor commands: High-frequency UDP (~200Hz)
+- Latency-sensitive: Timeouts trigger safety shutdown
+- **DO NOT** route RDP, large file transfers, or streaming through wired network during robot operation
+
+### Safe Remote Access During Robot Operation
+1. Use WiFi RDP: `192.168.0.91`
+2. Or use SSH (low bandwidth): `ssh robot@192.168.1.10`
+3. Avoid wired RDP through Jetson
 
 ### Service Commands
 ```bash
@@ -609,7 +621,7 @@ WiFi configured for "Client mode primary, AP secondary" - connects to external n
 
 | Mode | IP Address | Network | Purpose |
 |------|------------|---------|---------|
-| Client | 172.16.151.110 | GennFlex | RDP access, internet |
+| Client | 192.168.0.91 | GennFlex | RDP access, internet |
 | Access Point | 192.168.12.1 | YJ-MiniHexV2-152 | Direct robot connection |
 
 ### Access Point Details
@@ -640,3 +652,394 @@ ps aux | grep -E "(hostapd|dhcpd)" | grep -v grep
 
 ### Detailed Log
 See: `/home/robot/robot_controller_release/WIFI_BOOT_SETUP_LOG.md`
+
+---
+
+## One-Command Sensor Demo (2026-01-28)
+
+### Overview
+Single script that launches all sensors (RealSense + Livox LiDAR) with TCP bridges, TF transforms, and RViz visualization.
+
+### Quick Start
+```bash
+bash /home/robot/start_sensor_demo.sh
+```
+
+Press `Ctrl+C` to stop all processes (includes automatic cleanup on Jetson).
+
+### What It Starts
+
+| Step | Component | Location |
+|------|-----------|----------|
+| 1 | RealSense depth TCP publisher | Jetson |
+| 2 | Livox LiDAR driver | Jetson |
+| 3 | Livox TCP bridge | Jetson |
+| 4 | Depth bridge receiver | Mini PC |
+| 5 | Livox TCP receiver | Mini PC |
+| 6 | TF publishers (lidar + camera) | Mini PC |
+| 7 | RViz with sensor config | Mini PC |
+
+### Available Topics After Launch
+
+| Topic | Type | Description |
+|-------|------|-------------|
+| `/camera/color/image_raw` | Image | 640x480 BGR8 color |
+| `/camera/depth/image_raw` | Image | 640x480 16UC1 depth (mm) |
+| `/camera/points` | PointCloud2 | Camera XYZRGB pointcloud |
+| `/livox/pointcloud` | PointCloud2 | LiDAR pointcloud |
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `/home/robot/start_sensor_demo.sh` | Main launch script |
+| `/home/robot/robot_controller_release/sensor_visualization.rviz` | RViz config |
+
+### Cleanup
+The script automatically:
+- Kills local background processes on exit
+- SSHs to Jetson and kills remote processes (`realsense_depth_tcp_publisher.py`, `livox_tcp_bridge.py`, `livox_lidar_node`)
+
+---
+
+## Obstacle Avoidance Navigation (2026-02-04)
+
+### Overview
+Autonomous obstacle avoidance using RealSense depth camera and Livox LiDAR. Robot walks forward, slows down near obstacles, and turns to avoid them.
+
+### Quick Start
+```bash
+bash /home/robot/start_obstacle_avoidance.sh
+```
+
+Press `Ctrl+C` to stop - robot will sit down safely.
+
+### Configurable Parameters
+
+Parameters can be set via environment variables:
+
+```bash
+STOP_DISTANCE=0.8 FORWARD_SPEED=0.3 bash /home/robot/start_obstacle_avoidance.sh
+```
+
+Or pass directly to Python script:
+
+```bash
+source /home/robot/robot_controller_release/ros2_packages/setup.bash
+python3 /home/robot/obstacle_avoidance.py --stop-distance 0.8 --forward-speed 0.3
+```
+
+| Parameter | Flag | Default | Description |
+|-----------|------|---------|-------------|
+| Stop distance | `--stop-distance` | 1.2m | Distance to stop and turn |
+| Slow distance | `--slow-distance` | 1.8m | Distance to slow down |
+| Forward speed | `--forward-speed` | 0.5 m/s | Normal walking speed |
+| Slow speed | `--slow-speed` | 0.24 m/s | Speed near obstacles |
+| Turn speed | `--turn-speed` | 0.1 rad/s | Rotation speed |
+
+### View All Options
+```bash
+python3 /home/robot/obstacle_avoidance.py --help
+```
+
+### Behavior
+1. **Stand up** - transitions through states 1→2→3
+2. **Walk forward** - at `forward-speed` when path is clear
+3. **Slow down** - at `slow-speed` when obstacle within `slow-distance`
+4. **Stop and turn** - when obstacle within `stop-distance`
+5. **Reverse and retry** - if stuck for >5 seconds
+6. **Sit down safely** - on Ctrl+C (states 3→1→0)
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `~/hexplorer/scripts/start_obstacle_avoidance.sh` | Launch script (starts sensors + navigation) |
+| `~/hexplorer/navigation/obstacle_avoidance.py` | Main navigation node |
+
+---
+
+## Object Tracking System (2026-02-04)
+
+### Overview
+Multi-component object tracking system with color-based detection on Jetson, TCP streaming to Mini PC, and robot following capability.
+
+### Architecture
+```
+Jetson (192.168.1.20)                    Mini PC (192.168.1.10)
+=====================                    =======================
+
+jetson_object_tracker.py                 detection_receiver.py
+  - RealSense color detection              - TCP client (port 9997)
+  - TCP server (port 9997)                 - Publishes /object_detection
+  - Image stream (port 9996)                      |
+         |                                        v
+         +-------- TCP (57 bytes/msg) -----> object_follower.py
+         +-------- TCP (images) -----------> tracking_rviz_visualizer.py
+```
+
+### Quick Start
+
+```bash
+# Full sensor demo with tracking (RViz)
+bash ~/hexplorer/scripts/start_sensor_demo.sh
+
+# Tracking only with RViz visualization
+bash ~/hexplorer/scripts/start_object_tracking.sh --rviz
+
+# Robot follows yellow object
+bash ~/hexplorer/scripts/start_object_tracking.sh
+
+# SMART MODE: Robot follows with obstacle avoidance + active search
+bash ~/hexplorer/scripts/start_object_tracking.sh --smart
+
+# Track different color
+TARGET_COLOR=red bash ~/hexplorer/scripts/start_object_tracking.sh --rviz
+```
+
+### Supported Colors
+
+| Color | HSV Range |
+|-------|-----------|
+| yellow | H: 20-40, S: 80+, V: 80+ |
+| red | H: 0-10 or 170-180, S: 100+, V: 100+ |
+| green | H: 35-85, S: 80+, V: 80+ |
+| blue | H: 100-130, S: 80+, V: 80+ |
+
+### ROS2 Topics
+
+| Topic | Type | Description |
+|-------|------|-------------|
+| `/object_detection` | String | JSON detection data |
+| `/object_position` | Point | x=pixel_x, y=pixel_y, z=distance_mm |
+| `/object_tracking/marker` | Marker | 3D sphere at detected object |
+| `/object_tracking/text` | Marker | Distance label |
+| `/object_tracking/image` | Image | Camera with detection overlay |
+
+### Detection Message Format (TCP)
+
+57-byte binary message:
+| Field | Type | Description |
+|-------|------|-------------|
+| detected | uint8 | Object found (0/1) |
+| center_x | uint16 | Center X in pixels |
+| center_y | uint16 | Center Y in pixels |
+| bbox_x/y/w/h | uint16 | Bounding box |
+| distance_mm | uint32 | Depth at center |
+| confidence | float32 | Detection confidence |
+| timestamp | uint32 | Unix timestamp |
+| label | char[32] | Object class name |
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `~/hexplorer/tracking/jetson_object_tracker.py` | Runs on Jetson, color detection |
+| `~/hexplorer/tracking/detection_receiver.py` | TCP client, ROS2 publisher |
+| `~/hexplorer/tracking/object_follower.py` | Robot control to follow object |
+| `~/hexplorer/tracking/tracking_rviz_visualizer.py` | RViz markers and overlay |
+| `~/hexplorer/scripts/start_object_tracking.sh` | Launch script |
+
+### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `TARGET_COLOR` | yellow | Color to track |
+| `TARGET_DISTANCE` | 800 | Follow distance (mm) |
+| `MAX_SPEED` | 0.3 | Max forward speed (m/s) |
+| `TURN_SPEED` | 0.15 | Turn speed (rad/s) |
+
+### IMPORTANT: Camera Sharing Limitation
+
+The RealSense camera can only be used by ONE process at a time:
+- **Tracking mode**: `jetson_object_tracker.py` uses camera → no depth/pointcloud available
+- **No-tracking mode**: `realsense_depth_tcp_publisher.py` uses camera → full depth + pointcloud
+
+```bash
+# With tracking (color + tracking overlay, NO depth)
+bash ~/hexplorer/scripts/start_sensor_demo.sh
+
+# Without tracking (full depth + pointcloud)
+bash ~/hexplorer/scripts/start_sensor_demo.sh --no-track
+```
+
+---
+
+## Smart Object Follower (2026-02-04)
+
+### Overview
+Enhanced object following with LiDAR-based obstacle avoidance and active search patterns. Combines tracking from `object_follower.py` with LiDAR sensing (always available during tracking).
+
+### Quick Start
+```bash
+bash ~/hexplorer/scripts/start_object_tracking.sh --smart
+```
+
+### State Machine
+
+| State | Description |
+|-------|-------------|
+| INIT | Stand up sequence |
+| IDLE | Wait for target detection |
+| FOLLOWING | Follow target, monitor obstacles |
+| EVADE | Steer around obstacle to reach target |
+| BLOCKED | Stop - obstacle blocks path to target |
+| SEARCH | Active search when target lost |
+
+### Decision Logic
+
+| Target Visible | Obstacle Ahead | Target Direction | Action |
+|----------------|----------------|------------------|--------|
+| Yes | No | Any | FOLLOW normally |
+| Yes | Yes | Same as obstacle | BLOCKED - stop, wait |
+| Yes | Yes | Opposite side | EVADE - steer around |
+| No | Any | N/A | SEARCH pattern |
+
+### Active Search Pattern
+
+| Phase | Time | Behavior |
+|-------|------|----------|
+| 1 | 0-3s | Turn toward last seen + walk forward |
+| 2 | 3-8s | Zigzag - walk forward, alternate ±45° |
+| 3 | 8-15s | Expanding spiral |
+| 4 | >15s | Timeout - return to IDLE |
+
+### Parameters
+
+```bash
+# Environment variables
+TARGET_COLOR=yellow OBSTACLE_STOP=0.8 SEARCH_TIMEOUT=15 \
+  bash ~/hexplorer/scripts/start_object_tracking.sh --smart
+```
+
+| Parameter | Flag | Default | Description |
+|-----------|------|---------|-------------|
+| Target distance | `--target-distance` | 800mm | Distance to maintain |
+| Max speed | `--max-speed` | 0.3 m/s | Forward speed |
+| Turn speed | `--turn-speed` | 0.15 rad/s | Angular velocity |
+| Obstacle stop | `--obstacle-stop` | 0.8m | Stop if closer |
+| Obstacle slow | `--obstacle-slow` | 1.2m | Slow if closer |
+| Search timeout | `--search-timeout` | 15s | Give up after |
+| Search speed | `--search-speed` | 0.1 m/s | Speed while searching |
+
+### 360° Obstacle Avoidance
+
+The smart follower uses **360-degree LiDAR detection** to prevent collisions in any direction:
+
+```
+                FRONT (0°)
+               lidar_front
+                    ↑
+                    |
+      LEFT (+90°)   |   RIGHT (-90°)
+     lidar_left ←---+---→ lidar_right
+                    |
+                    ↓
+                BACK (±180°)
+               lidar_back
+```
+
+| Distance | Action |
+|----------|--------|
+| < 0.5m (EMERGENCY) | **STOP** + turn to safety |
+| < 0.8m (STOP) | Stop motion in that direction |
+| < 1.2m (SLOW) | Reduce speed proportionally |
+
+Safety checks apply to:
+- Forward motion → checks front
+- Backward motion → checks back
+- Strafe left → checks left
+- Strafe right → checks right
+- Very close in ANY direction → total stop
+
+### Key Insight: Sensor Availability
+
+| Sensor | During Tracking | Notes |
+|--------|-----------------|-------|
+| LiDAR (`/livox/pointcloud`) | ✅ Always | Separate Ethernet |
+| Depth camera | ❌ Not available | Shared with tracker |
+| Color camera | ✅ Via tracker | Detection + images |
+
+LiDAR is sufficient for obstacle avoidance and preferred for reliability.
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `~/hexplorer/tracking/smart_follower.py` | Main smart follower node |
+| `~/hexplorer/scripts/start_object_tracking.sh` | Launch with `--smart` flag |
+
+---
+
+## Hexplorer Software Organization (2026-02-04)
+
+### Folder Structure
+
+All custom software is organized in `~/hexplorer/`:
+
+```
+~/hexplorer/
+├── sensors/          # Sensor publishers and viewers
+│   ├── realsense_depth_tcp_publisher.py
+│   ├── realsense_depth_publisher.py
+│   └── camera_viewer.py
+├── tracking/         # Object detection and following
+│   ├── jetson_object_tracker.py
+│   ├── detection_receiver.py
+│   ├── object_follower.py
+│   ├── smart_follower.py        # NEW: With obstacle avoidance
+│   ├── tracking_rviz_visualizer.py
+│   ├── tracking_visualizer.py
+│   └── follow_white_box.py
+├── navigation/       # Autonomous navigation
+│   ├── obstacle_avoidance.py
+│   └── human_follower.py
+├── bridges/          # TCP bridges for cross-machine comm
+│   ├── depth_bridge_receiver.py
+│   ├── livox_tcp_bridge.py
+│   └── livox_tcp_receiver.py
+├── config/           # RViz configurations
+│   ├── sensor_visualization.rviz
+│   └── tracking_visualization.rviz
+├── docs/             # Setup logs and documentation
+│   ├── HEXPLORER_CONTROL.md
+│   ├── CAMERA_SETUP_LOG.md
+│   ├── LIDAR_SETUP_LOG.md
+│   └── ...
+├── scripts/          # Launch scripts
+│   ├── start_sensor_demo.sh
+│   ├── start_object_tracking.sh
+│   └── start_obstacle_avoidance.sh
+└── README.md         # Full documentation
+```
+
+### Convenience Symlinks
+
+Symlinks in home directory point to hexplorer scripts:
+```bash
+~/start_sensor_demo.sh -> ~/hexplorer/scripts/start_sensor_demo.sh
+~/start_object_tracking.sh -> ~/hexplorer/scripts/start_object_tracking.sh
+~/start_obstacle_avoidance.sh -> ~/hexplorer/scripts/start_obstacle_avoidance.sh
+```
+
+### Quick Reference
+
+```bash
+# Full sensor demo with tracking
+bash ~/hexplorer/scripts/start_sensor_demo.sh
+
+# Sensors only (no tracking)
+bash ~/hexplorer/scripts/start_sensor_demo.sh --no-track
+
+# Object tracking with RViz
+bash ~/hexplorer/scripts/start_object_tracking.sh --rviz
+
+# Robot follows object
+bash ~/hexplorer/scripts/start_object_tracking.sh
+
+# Smart follower (obstacle avoidance + active search)
+bash ~/hexplorer/scripts/start_object_tracking.sh --smart
+
+# Obstacle avoidance
+bash ~/hexplorer/scripts/start_obstacle_avoidance.sh
+```
