@@ -971,6 +971,170 @@ LiDAR is sufficient for obstacle avoidance and preferred for reliability.
 
 ---
 
+## MOLA LiDAR Odometry System (2026-02-10) - RECOMMENDED
+
+### Overview
+
+**MOLA is the recommended SLAM/odometry system for this robot.**
+
+LiDAR-only odometry using MOLA (Modular Object Localization and Mapping Architecture). Uses GICP (Generalized ICP) algorithms for scan matching. No IMU required.
+
+**Why MOLA (not Fast-LIO):**
+- LiDAR-only - avoids IMU drift problems
+- The Livox Mid360 IMU has significant drift issues
+- More reliable odometry for this robot
+- Tuned ICP parameters for indoor environments
+
+### Architecture
+
+```
+Jetson (192.168.1.20)                    Mini PC (192.168.1.10)
+========================                  ========================
+
+livox_lidar_node                         MOLA-SLAM
+  └─/livox/lidar ───TCP:9998───►         FilterPass
+      (livox_tcp_bridge.py)                └─/livox/lidar_filtered
+                                                    ↓
+                                              MOLA Mapping
+                                                    ↓
+                                         /tf (map→odom→base_link)
+                                         /localmap (PointCloud2)
+                                         /Odometry
+```
+
+### Quick Start
+
+```bash
+bash ~/start_mola_slam.sh
+```
+
+Options:
+- `--no-gui` - Disable MOLA GUI
+- `--no-rviz` - Disable RViz
+
+Press `Ctrl+C` to stop all processes.
+
+### Published Topics
+
+| Topic | Type | Description |
+|-------|------|-------------|
+| `/livox/lidar` | PointCloud2 | Raw LiDAR from TCP bridge |
+| `/livox/lidar_filtered` | PointCloud2 | Filtered (input to MOLA) |
+| `/state_estimator/pose` | Odometry | Robot pose estimate (USE THIS) |
+| `/lidar_odometry/localmap_points` | PointCloud2 | Accumulated map |
+| `/tf` | TF | map→odom→base_link transforms |
+
+### TF Tree
+
+```
+map
+ └── odom
+      └── base_link
+           └── livox_frame
+```
+
+### Key Files
+
+| File | Location | Purpose |
+|------|----------|---------|
+| `start_mola_slam.sh` | ~/hexplorer/scripts/ | Main launch script |
+| `livox_tcp_receiver.py` | ~/hexplorer/bridges/ | LiDAR TCP receiver |
+| `mola_slam_launch.py` | MOLA-SLAM workspace | MOLA launch file |
+| `mola_slam.rviz` | ~/hexplorer/config/ | RViz config |
+
+### Workspace
+
+**Location:** `/home/robot/MOLA-SLAM/mola_ws/`
+
+**Source environment:**
+```bash
+source /opt/ros/humble/setup.bash
+source ~/MOLA-SLAM/mola_ws/install/setup.bash
+```
+
+**Key packages:**
+- `mola_bringup` - Launch files and utilities
+- `mola_lidar_odometry` - Main LO algorithm
+- `mp2p_icp` - ICP implementation
+- `mrpt_ros_bridge` - MRPT/ROS2 bridge
+
+### Map Operations
+
+**Save map during operation:**
+```bash
+ros2 service call /map_save mola_msgs/srv/MapSave \
+  "map_path: '/home/robot/mola_maps/my_map'"
+```
+
+**Files created:**
+- `my_map.simplemap` - Keyframe data
+- `my_map.mm` - Metric map
+- `my_map.tum` - Trajectory
+
+**Auto-save on shutdown:**
+- `final_map.simplemap` in current directory
+- `estimated_trajectory.tum` in current directory
+
+### Localization Mode
+
+To localize in an existing map:
+```bash
+ros2 launch mola_bringup mola_localize_launch.py
+```
+Then provide initial pose via the trajectory GUI.
+
+### ICP Tuning Parameters
+
+**Config file:** `~/MOLA-SLAM/mola_ws/install/mola_lidar_odometry/share/mola_lidar_odometry/pipelines/lidar3d-gicp-katana.yaml`
+
+| Parameter | Value | Description |
+|-----------|-------|-------------|
+| `min_icp_goodness` | 0.92 | Min quality to accept match (0.85-0.95) |
+| `maximum_sigma` | 0.8 | Max matching distance in meters |
+| `maxIterations` | 50 | ICP iterations (30-80) |
+| `robustKernelParam` | 4.0 | Outlier rejection (lower=stricter) |
+
+**Edit and restart workflow:**
+```bash
+# Edit config
+nano ~/MOLA-SLAM/mola_ws/install/mola_lidar_odometry/share/mola_lidar_odometry/pipelines/lidar3d-gicp-katana.yaml
+
+# Restart MOLA
+pkill -9 -f mola-cli
+bash ~/hexplorer/scripts/start_mola_slam.sh
+```
+
+**Full tuning guide:** `~/hexplorer/docs/MOLA_SLAM_TUNING.md`
+
+### Troubleshooting
+
+**No points in /livox/lidar_filtered:**
+- Check FilterPass node is running
+- Verify /livox/lidar has data: `ros2 topic hz /livox/lidar`
+
+**MOLA not starting:**
+- Ensure workspace is sourced: `source ~/MOLA-SLAM/mola_ws/install/setup.bash`
+
+**High CPU usage:**
+- Reduce visualization: `--no-gui` or `--no-rviz`
+
+**Map jumps/displacement:**
+- Increase `min_icp_goodness` to 0.95
+- Decrease `maximum_sigma` to 0.5
+- Move robot slower
+
+---
+
+## Fast-LIO (LEGACY - DO NOT USE)
+
+**Fast-LIO is NOT recommended for this robot.**
+
+The Livox Mid360 IMU has significant drift issues that cause poor SLAM performance with Fast-LIO. Use MOLA LiDAR Odometry instead.
+
+The script `~/hexplorer/scripts/start_fastlio.sh` exists but is marked as legacy and will show a warning if run.
+
+---
+
 ## Hexplorer Software Organization (2026-02-04)
 
 ### Folder Structure
@@ -987,13 +1151,19 @@ All custom software is organized in `~/hexplorer/`:
 │   ├── jetson_object_tracker.py
 │   ├── detection_receiver.py
 │   ├── object_follower.py
-│   ├── smart_follower.py        # NEW: With obstacle avoidance
+│   ├── smart_follower.py        # With obstacle avoidance + SLAM search
 │   ├── tracking_rviz_visualizer.py
 │   ├── tracking_visualizer.py
 │   └── follow_white_box.py
 ├── navigation/       # Autonomous navigation
 │   ├── obstacle_avoidance.py
+│   ├── frontier_explorer.py     # SLAM frontier detection
 │   └── human_follower.py
+├── slam/             # SLAM system components
+│   ├── odometry_publisher.py    # RobotState → /odom
+│   └── config/
+│       ├── slam_params.yaml     # slam_toolbox config
+│       └── pc_to_scan.yaml      # pointcloud_to_laserscan config
 ├── bridges/          # TCP bridges for cross-machine comm
 │   ├── depth_bridge_receiver.py
 │   ├── livox_tcp_bridge.py
@@ -1009,7 +1179,8 @@ All custom software is organized in `~/hexplorer/`:
 ├── scripts/          # Launch scripts
 │   ├── start_sensor_demo.sh
 │   ├── start_object_tracking.sh
-│   └── start_obstacle_avoidance.sh
+│   ├── start_obstacle_avoidance.sh
+│   └── start_mola_slam.sh       # MOLA LiDAR Odometry (RECOMMENDED)
 └── README.md         # Full documentation
 ```
 
@@ -1020,6 +1191,7 @@ Symlinks in home directory point to hexplorer scripts:
 ~/start_sensor_demo.sh -> ~/hexplorer/scripts/start_sensor_demo.sh
 ~/start_object_tracking.sh -> ~/hexplorer/scripts/start_object_tracking.sh
 ~/start_obstacle_avoidance.sh -> ~/hexplorer/scripts/start_obstacle_avoidance.sh
+~/start_mola_slam.sh -> ~/hexplorer/scripts/start_mola_slam.sh
 ```
 
 ### Quick Reference
@@ -1037,8 +1209,11 @@ bash ~/hexplorer/scripts/start_object_tracking.sh --rviz
 # Robot follows object
 bash ~/hexplorer/scripts/start_object_tracking.sh
 
-# Smart follower (obstacle avoidance + active search)
+# Smart follower (obstacle avoidance + SLAM-based search)
 bash ~/hexplorer/scripts/start_object_tracking.sh --smart
+
+# MOLA LiDAR Odometry (RECOMMENDED for SLAM)
+bash ~/hexplorer/scripts/start_mola_slam.sh
 
 # Obstacle avoidance
 bash ~/hexplorer/scripts/start_obstacle_avoidance.sh
