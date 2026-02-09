@@ -211,6 +211,15 @@ MOLA-LO is **odometry**, not full SLAM:
 - Accumulated drift when returning to visited areas
 - For loop closure, consider RTAB-Map or Cartographer
 
+## Why Not Fast-LIO?
+
+Fast-LIO (LiDAR+IMU fusion) is **NOT recommended** for this robot because:
+- The Livox Mid360's built-in IMU has significant drift
+- IMU drift causes worse SLAM performance than LiDAR-only MOLA
+- Fast-LIO script exists but is marked as **LEGACY**
+
+**Always use MOLA-SLAM** (`start_mola_slam.sh`) for this robot.
+
 ## Current Tuned Parameters (2026-02-10)
 
 ```yaml

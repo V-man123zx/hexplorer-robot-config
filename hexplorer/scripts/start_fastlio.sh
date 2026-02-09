@@ -1,8 +1,35 @@
 #!/bin/bash
+#
+# ============================================================================
+#                         LEGACY - NOT RECOMMENDED
+# ============================================================================
+# Fast-LIO requires IMU data, but the Livox Mid360 IMU on this robot has
+# significant drift issues, making Fast-LIO unreliable.
+#
+# USE MOLA-SLAM INSTEAD:
+#   bash ~/hexplorer/scripts/start_mola_slam.sh
+#
+# This script is kept for reference/testing only.
+# ============================================================================
+#
 # Start Fast-LIO SLAM with LiDAR and IMU bridges
 # Usage: bash start_fastlio.sh
 
 set -e
+
+echo ""
+echo "WARNING: Fast-LIO is LEGACY and NOT RECOMMENDED for this robot."
+echo "         The IMU has drift issues that cause poor SLAM performance."
+echo ""
+echo "         Use MOLA-SLAM instead:"
+echo "           bash ~/hexplorer/scripts/start_mola_slam.sh"
+echo ""
+read -p "Continue anyway? (y/N): " confirm
+if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
+    echo "Aborted. Use start_mola_slam.sh instead."
+    exit 0
+fi
+echo ""
 
 # Get script directory
 SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
