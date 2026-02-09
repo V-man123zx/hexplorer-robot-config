@@ -4,7 +4,8 @@
 #
 # Usage:
 #   bash start_object_tracking.sh           # Full system with robot control
-#   bash start_object_tracking.sh --smart   # Smart follower with obstacle avoidance
+#   bash start_object_tracking.sh --smart   # Smart follower with obstacle avoidance + SLAM search
+#   bash start_object_tracking.sh --slam    # Start SLAM system alongside tracking (auto with --smart)
 #   bash start_object_tracking.sh --test    # Test mode - terminal visualizer (no robot)
 #   bash start_object_tracking.sh --rviz    # RViz visualization mode (no robot)
 #
@@ -15,12 +16,14 @@
 #   TURN_SPEED=0.15         # Turn speed (rad/s)
 #   OBSTACLE_STOP=0.8       # Stop if obstacle closer (m) [smart mode]
 #   OBSTACLE_SLOW=1.2       # Slow if obstacle closer (m) [smart mode]
-#   SEARCH_TIMEOUT=15       # Search timeout (s) [smart mode]
+#   SEARCH_SPEED=0.5        # Search speed (m/s) [smart mode]
 #
 
 set -e
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Resolve symlinks to get actual script location
+SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
+SCRIPT_DIR="$(dirname "$SCRIPT_PATH")"
 HEXPLORER_DIR="$(dirname "$SCRIPT_DIR")"
 JETSON_IP="192.168.1.20"
 JETSON_USER="robot"
@@ -30,6 +33,7 @@ JETSON_PASS="123"
 TEST_MODE=false
 RVIZ_MODE=false
 SMART_MODE=false
+SLAM_MODE=false
 for arg in "$@"; do
     case $arg in
         --test)
@@ -42,6 +46,11 @@ for arg in "$@"; do
             ;;
         --smart)
             SMART_MODE=true
+            SLAM_MODE=true  # Smart mode requires SLAM
+            shift
+            ;;
+        --slam)
+            SLAM_MODE=true
             shift
             ;;
     esac
@@ -55,9 +64,13 @@ if [ "$RVIZ_MODE" = true ]; then
 elif [ "$TEST_MODE" = true ]; then
     echo "  MODE: TEST (terminal visualization)"
 elif [ "$SMART_MODE" = true ]; then
-    echo "  MODE: SMART (obstacle avoidance + active search)"
+    echo "  MODE: SMART (obstacle avoidance + SLAM-based search)"
+    echo "  SLAM: Enabled (map builds continuously)"
 else
     echo "  MODE: FULL (robot will follow object)"
+    if [ "$SLAM_MODE" = true ]; then
+        echo "  SLAM: Enabled"
+    fi
 fi
 echo ""
 
@@ -69,12 +82,11 @@ export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 # Configurable parameters
 TARGET_COLOR="${TARGET_COLOR:-yellow}"
 TARGET_DISTANCE="${TARGET_DISTANCE:-800}"
-MAX_SPEED="${MAX_SPEED:-0.8}"
-TURN_SPEED="${TURN_SPEED:-0.8}"
+MAX_SPEED="${MAX_SPEED:-0.4}"
+TURN_SPEED="${TURN_SPEED:-0.6}"
 OBSTACLE_STOP="${OBSTACLE_STOP:-0.8}"
 OBSTACLE_SLOW="${OBSTACLE_SLOW:-1.2}"
-SEARCH_TIMEOUT="${SEARCH_TIMEOUT:-1000}"
-SEARCH_SPEED="${SEARCH_SPEED:-0.5}"
+SEARCH_SPEED="${SEARCH_SPEED:-0.2}"
 
 echo "Tracking parameters:"
 echo "  - Target color:    $TARGET_COLOR"
@@ -84,7 +96,7 @@ echo "  - Turn speed:      ${TURN_SPEED} rad/s"
 if [ "$SMART_MODE" = true ]; then
     echo "  - Obstacle stop:   ${OBSTACLE_STOP}m"
     echo "  - Obstacle slow:   ${OBSTACLE_SLOW}m"
-    echo "  - Search timeout:  ${SEARCH_TIMEOUT}s"
+    echo "  - Search mode:     SLAM-based (no timeout)"
 fi
 echo ""
 
@@ -130,9 +142,9 @@ sshpass -p "$JETSON_PASS" scp -o StrictHostKeyChecking=no \
     "$JETSON_USER@$JETSON_IP:/home/robot/jetson_object_tracker.py" 2>/dev/null
 echo "  Script synced"
 
-# Start LiDAR if in smart mode (needed for obstacle avoidance)
-if [ "$SMART_MODE" = true ]; then
-    echo "[3/6] Starting Livox LiDAR driver on Jetson..."
+# Start LiDAR if in smart mode or slam mode (needed for obstacle avoidance and SLAM)
+if [ "$SMART_MODE" = true ] || [ "$SLAM_MODE" = true ]; then
+    echo "[3/9] Starting Livox LiDAR driver on Jetson..."
     sshpass -p "$JETSON_PASS" ssh -o StrictHostKeyChecking=no "$JETSON_USER@$JETSON_IP" \
         "source /opt/ros/humble/setup.bash && \
          source /home/robot/robot_controller_release/ros2_packages/setup.bash && \
@@ -140,7 +152,7 @@ if [ "$SMART_MODE" = true ]; then
     PIDS+=($!)
     sleep 3
 
-    echo "[4/6] Starting Livox TCP bridge on Jetson..."
+    echo "[4/9] Starting Livox TCP bridge on Jetson..."
     sshpass -p "$JETSON_PASS" ssh -o StrictHostKeyChecking=no "$JETSON_USER@$JETSON_IP" \
         "source /opt/ros/humble/setup.bash && \
          source /home/robot/robot_controller_release/ros2_packages/setup.bash && \
@@ -148,14 +160,48 @@ if [ "$SMART_MODE" = true ]; then
     PIDS+=($!)
     sleep 2
 
-    echo "[5/6] Starting Livox TCP receiver on Mini PC..."
+    echo "[5/9] Starting Livox TCP receiver on Mini PC..."
     python3 "$HEXPLORER_DIR/bridges/livox_tcp_receiver.py" &
     PIDS+=($!)
     sleep 1
 
-    STEP_TRACKER="6"
-    STEP_RECEIVER="7"
-    TOTAL_STEPS="7"
+    # Start SLAM components if in SLAM mode
+    if [ "$SLAM_MODE" = true ]; then
+        echo "[6/9] Starting odometry publisher..."
+        python3 "$HEXPLORER_DIR/slam/odometry_publisher.py" &
+        PIDS+=($!)
+        sleep 0.5
+
+        echo "[7/9] Starting static TF: base_link -> livox_frame..."
+        ros2 run tf2_ros static_transform_publisher \
+            --x 0.0 --y 0.0 --z 0.2 \
+            --qx 0.0 --qy 0.0 --qz 0.0 --qw 1.0 \
+            --frame-id base_link --child-frame-id livox_frame &
+        PIDS+=($!)
+        sleep 0.5
+
+        echo "[8/9] Starting pointcloud to laserscan converter..."
+        ros2 run pointcloud_to_laserscan pointcloud_to_laserscan_node \
+            --ros-args \
+            --params-file "$HEXPLORER_DIR/slam/config/pc_to_scan.yaml" \
+            -r cloud_in:=/livox/pointcloud &
+        PIDS+=($!)
+        sleep 0.5
+
+        echo "[9/9] Starting slam_toolbox..."
+        ros2 launch slam_toolbox online_async_launch.py \
+            slam_params_file:="$HEXPLORER_DIR/slam/config/slam_params.yaml" &
+        PIDS+=($!)
+        sleep 2
+
+        STEP_TRACKER="10"
+        STEP_RECEIVER="11"
+        TOTAL_STEPS="12"
+    else
+        STEP_TRACKER="6"
+        STEP_RECEIVER="7"
+        TOTAL_STEPS="8"
+    fi
 else
     STEP_TRACKER="3"
     STEP_RECEIVER="4"
@@ -219,11 +265,12 @@ elif [ "$TEST_MODE" = true ]; then
     python3 "$HEXPLORER_DIR/tracking/tracking_visualizer.py"
 
 elif [ "$SMART_MODE" = true ]; then
-    echo "  SMART MODE - Obstacle Avoidance + Active Search"
+    echo "  SMART MODE - Obstacle Avoidance + SLAM-Based Search"
     echo "========================================="
     echo ""
     echo "Robot will stand up and follow the $TARGET_COLOR object"
-    echo "Uses LiDAR for obstacle avoidance and active search when target lost"
+    echo "Uses LiDAR for obstacle avoidance and SLAM-based frontier exploration"
+    echo "Search: turn-in-place (5s) -> explore frontiers -> patrol"
     echo "Press Ctrl+C to stop (robot will sit down safely)"
     echo ""
 
@@ -234,7 +281,6 @@ elif [ "$SMART_MODE" = true ]; then
         --turn-speed "$TURN_SPEED" \
         --obstacle-stop "$OBSTACLE_STOP" \
         --obstacle-slow "$OBSTACLE_SLOW" \
-        --search-timeout "$SEARCH_TIMEOUT" \
         --search-speed "$SEARCH_SPEED"
 
 else

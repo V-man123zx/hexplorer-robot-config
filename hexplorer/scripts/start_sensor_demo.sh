@@ -11,7 +11,9 @@
 
 set -e
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Resolve symlinks to get actual script location
+SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
+SCRIPT_DIR="$(dirname "$SCRIPT_PATH")"
 HEXPLORER_DIR="$(dirname "$SCRIPT_DIR")"
 JETSON_IP="192.168.1.20"
 JETSON_PASS="123"

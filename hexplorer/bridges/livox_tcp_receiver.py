@@ -17,7 +17,8 @@ class LivoxTCPReceiver(Node):
     def __init__(self):
         super().__init__('livox_tcp_receiver')
 
-        self.pub = self.create_publisher(PointCloud2, '/livox/pointcloud', 10)
+        # Publish to /livox/lidar for MOLA-SLAM compatibility
+        self.pub = self.create_publisher(PointCloud2, '/livox/lidar', 10)
 
         self._running = True
         self._recv_thread = threading.Thread(target=self.receive_data, daemon=True)
@@ -64,8 +65,9 @@ class LivoxTCPReceiver(Node):
                     if len(data) == data_len:
                         # Create PointCloud2 message
                         msg = PointCloud2()
-                        msg.header.stamp.sec = stamp_sec
-                        msg.header.stamp.nanosec = stamp_nsec
+                        # Use LOCAL timestamp (Jetson clock may be off)
+                        now = self.get_clock().now().to_msg()
+                        msg.header.stamp = now
                         msg.header.frame_id = 'livox_frame'
 
                         msg.fields = [

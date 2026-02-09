@@ -1,19 +1,29 @@
 #!/usr/bin/env python3
 """
-Smart Object Follower with Obstacle Avoidance for Hexplorer Robot
+Smart Object Follower with Obstacle Avoidance and SLAM-based Search
 
-Combines object tracking with LiDAR-based obstacle avoidance.
-Uses LiDAR (always available) for obstacle detection while following color-tracked objects.
+Combines object tracking with LiDAR-based obstacle avoidance and SLAM-based
+frontier exploration when target is lost.
 
 State Machine:
     INIT -> IDLE -> FOLLOWING -> (EVADE | BLOCKED) -> FOLLOWING
-                 -> SEARCH -> FOLLOWING | IDLE
+                 -> SEARCH (turn-in-place -> explore frontiers -> patrol)
+                 -> FOLLOWING
+
+Search Sub-states:
+    1. TURN_IN_PLACE (5s): Turn toward where target was last seen
+    2. EXPLORE: Navigate to frontiers (boundaries of mapped/unmapped areas)
+    3. PATROL: When fully mapped, patrol random free cells
 
 Features:
 - Object following from /object_detection topic
-- LiDAR-based obstacle avoidance (always available during tracking)
-- Active search pattern when target is lost
+- LiDAR-based 360-degree obstacle avoidance
+- SLAM-based frontier exploration when target is lost
+- No search timeout - keeps searching until target found
 - Safe sit-down on Ctrl+C
+
+IMPORTANT: SLAM system must be running separately (start_slam.sh)
+The smart follower reads /map but does not control SLAM lifecycle.
 
 Usage:
     source /home/robot/robot_controller_release/ros2_packages/setup.bash
@@ -25,7 +35,6 @@ Options:
     --turn-speed         Angular velocity for turning (default: 0.15 rad/s)
     --obstacle-stop      Stop if obstacle closer than this (default: 0.8m)
     --obstacle-slow      Slow down if obstacle closer than this (default: 1.2m)
-    --search-timeout     Give up searching after this many seconds (default: 15)
     --search-speed       Forward speed while searching (default: 0.1 m/s)
 """
 
@@ -35,6 +44,7 @@ from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
 from custom_msg.msg import RobotCommand, LivoxPointcloud
 from geometry_msgs.msg import Twist
 from sensor_msgs.msg import PointCloud2
+from nav_msgs.msg import OccupancyGrid, Odometry
 from std_msgs.msg import String
 import numpy as np
 import struct
@@ -42,7 +52,13 @@ import json
 import time
 import signal
 import argparse
+import sys
+import os
 from enum import Enum, auto
+
+# Add hexplorer navigation to path for frontier explorer
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'navigation'))
+from frontier_explorer import FrontierExplorer
 
 
 # Default parameters
@@ -60,7 +76,13 @@ DEFAULT_SEARCH_SPEED = 0.1         # m/s
 DEFAULT_OBSTACLE_STOP = 0.8        # m - stop if obstacle closer
 DEFAULT_OBSTACLE_SLOW = 1.2        # m - slow down if obstacle closer
 DEFAULT_EMERGENCY_STOP = 0.5       # m - EMERGENCY stop, never move forward
-DEFAULT_SEARCH_TIMEOUT = 15.0      # seconds
+
+# Search parameters
+TURN_IN_PLACE_DURATION = 5.0       # seconds to turn in place before exploring
+GOAL_REACHED_THRESHOLD = 0.5       # meters - consider goal reached if within this distance
+EXPLORE_MAX_DISTANCE = 10.0        # meters - max frontier distance to consider
+PATROL_MIN_DISTANCE = 2.0          # meters - min patrol waypoint distance
+PATROL_MAX_DISTANCE = 5.0          # meters - max patrol waypoint distance
 
 # Image parameters
 IMAGE_WIDTH = 640
@@ -89,6 +111,13 @@ class State(Enum):
     SHUTDOWN = auto()
 
 
+class SearchSubState(Enum):
+    """Sub-states within SEARCH state."""
+    TURN_IN_PLACE = auto()  # Turn toward last seen direction (no forward motion)
+    EXPLORE = auto()        # Navigate to frontiers using SLAM map
+    PATROL = auto()         # When fully mapped, patrol random free cells
+
+
 class SmartFollower(Node):
     def __init__(self, args):
         super().__init__('smart_follower')
@@ -108,7 +137,6 @@ class SmartFollower(Node):
         self.obstacle_stop = args.obstacle_stop
         self.obstacle_slow = args.obstacle_slow
         self.emergency_stop = DEFAULT_EMERGENCY_STOP  # Hard safety limit
-        self.search_timeout = args.search_timeout
 
         # Publishers for robot control
         self.cmd_pub = self.create_publisher(RobotCommand, '/robot_cmd', 10)
@@ -131,6 +159,27 @@ class SmartFollower(Node):
         self.create_subscription(
             LivoxPointcloud, '/livox_Lidar_node/sn153/xyz/pointcloud',
             self.livox_callback, sensor_qos)
+
+        # Subscribe to SLAM map and odometry for exploration
+        self.create_subscription(
+            OccupancyGrid, '/map', self.map_callback, 10)
+        self.create_subscription(
+            Odometry, '/odom', self.odom_callback, sensor_qos)
+
+        # Frontier explorer for SLAM-based search
+        self.frontier_explorer = FrontierExplorer(min_frontier_size=10)
+
+        # Robot pose from odometry
+        self.robot_x = 0.0
+        self.robot_y = 0.0
+        self.robot_yaw = 0.0
+        self.last_odom_time = 0
+        self._first_odom = True
+
+        # Exploration state
+        self.current_goal = None  # (x, y) goal for exploration
+        self.last_map_time = 0
+        self._slam_available = False
 
         # State machine
         self.state = State.INIT
@@ -155,9 +204,8 @@ class SmartFollower(Node):
 
         # Search state
         self.search_start_time = 0
-        self.search_phase = 0
-        self.search_direction = 1
-        self.zigzag_time = 0
+        self.search_sub_state = SearchSubState.TURN_IN_PLACE
+        self.search_direction = 1  # Direction to turn: -1=left, 1=right
 
         # Evade state
         self.evade_direction = 0
@@ -167,7 +215,8 @@ class SmartFollower(Node):
         self.get_logger().info(f'  Max speed: {self.max_speed} m/s')
         self.get_logger().info(f'  Obstacle stop: {self.obstacle_stop}m')
         self.get_logger().info(f'  Obstacle slow: {self.obstacle_slow}m')
-        self.get_logger().info(f'  Search timeout: {self.search_timeout}s')
+        self.get_logger().info(f'  Search mode: SLAM-based (no timeout)')
+        self.get_logger().info('  NOTE: SLAM system must be running (start_slam.sh)')
 
     def detection_callback(self, msg):
         """Process detection message from Jetson."""
@@ -186,6 +235,31 @@ class SmartFollower(Node):
                     self.last_seen_side = 0   # Object centered
         except json.JSONDecodeError:
             pass
+
+    def map_callback(self, msg):
+        """Process SLAM map for frontier exploration."""
+        if self.frontier_explorer.update_map(msg):
+            self.last_map_time = time.time()
+            if not self._slam_available:
+                self._slam_available = True
+                self.get_logger().info('SLAM map received - frontier exploration available')
+
+    def odom_callback(self, msg):
+        """Process odometry for robot position tracking."""
+        self.robot_x = msg.pose.pose.position.x
+        self.robot_y = msg.pose.pose.position.y
+
+        # Extract yaw from quaternion
+        q = msg.pose.pose.orientation
+        siny_cosp = 2.0 * (q.w * q.z + q.x * q.y)
+        cosy_cosp = 1.0 - 2.0 * (q.y * q.y + q.z * q.z)
+        self.robot_yaw = np.arctan2(siny_cosp, cosy_cosp)
+
+        self.last_odom_time = time.time()
+
+        if self._first_odom:
+            self._first_odom = False
+            self.get_logger().info(f'Odometry received - position tracking active')
 
     def lidar_callback(self, msg):
         """Process LiDAR pointcloud (bridged PointCloud2 topic)."""
@@ -671,27 +745,24 @@ class SmartFollower(Node):
                     if target_detected:
                         self.state = State.FOLLOWING
                         self.search_start_time = 0
+                        self.current_goal = None
                         self.get_logger().info('Target found - FOLLOWING')
                     else:
                         search_time = now - self.search_start_time
                         vel, status = self._search_pattern(vel, search_time)
 
-                        # Obstacle avoidance during search
-                        if obstacle_close:
-                            # Stop forward motion, turn away from obstacle
+                        # Obstacle avoidance during search (handled within _search_pattern
+                        # for goal navigation, but add extra safety here)
+                        if obstacle_close and vel.linear.x > 0:
+                            # Stop forward motion if obstacle in way
                             vel.linear.x = 0.0
                             if self.lidar_obstacle_side != 0:
-                                # Turn away from obstacle
                                 vel.angular.z = self.turn_speed * (-self.lidar_obstacle_side)
                             else:
-                                # Obstacle centered - turn in search direction
                                 vel.angular.z = self.turn_speed * self.search_direction
                             status = f'SEARCH AVOID obs={self.lidar_min_distance:.2f}m'
 
-                        if search_time > self.search_timeout:
-                            self.state = State.IDLE
-                            self.search_start_time = 0
-                            self.get_logger().info('Search timeout - IDLE')
+                        # No timeout - keep searching until target found
 
                 # ============================================================
                 # GLOBAL SAFETY CHECK - applies to ALL states
@@ -786,51 +857,132 @@ class SmartFollower(Node):
             return f'FOLLOW dist={distance}mm err={error:+d}px'
 
     def _search_pattern(self, vel, search_time):
-        """Execute active search pattern. Returns (velocity, status)."""
-        now = time.time()
+        """
+        Execute SLAM-based search pattern. Returns (velocity, status).
 
-        # Phase 0 (0-3s): Turn toward last seen direction + slow forward
-        if search_time < 3.0:
-            if self.search_phase != 0:
-                self.search_phase = 0
+        Search sub-states:
+        1. TURN_IN_PLACE (0-5s): Turn in place toward last seen direction
+        2. EXPLORE: Navigate to frontiers using SLAM map
+        3. PATROL: When fully mapped, patrol random free cells
+        """
+        # Sub-state 1: Turn in place (first 5 seconds)
+        if search_time < TURN_IN_PLACE_DURATION:
+            if self.search_sub_state != SearchSubState.TURN_IN_PLACE:
+                self.search_sub_state = SearchSubState.TURN_IN_PLACE
+                self.current_goal = None
+                self.get_logger().info(f'Search: TURN_IN_PLACE phase')
+
+            # Turn in place - NO forward motion
+            vel.linear.x = 0.0
             vel.angular.z = self.search_turn_speed * self.search_direction
-            vel.linear.x = self.search_speed
             direction = "left" if self.search_direction > 0 else "right"
-            return vel, f'SEARCH P1: turn {direction} + forward ({search_time:.1f}s)'
+            return vel, f'SEARCH: turn {direction} ({search_time:.1f}s/{TURN_IN_PLACE_DURATION}s)'
 
-        # Phase 1 (3-8s): Zigzag - walk forward, alternate turning
-        elif search_time < 8.0:
-            if self.search_phase != 1:
-                self.search_phase = 1
-                self.zigzag_time = now
+        # After turn-in-place, use SLAM-based exploration
+        slam_available = self._slam_available and (time.time() - self.last_map_time) < 5.0
+        odom_available = (time.time() - self.last_odom_time) < 1.0
 
-            # Switch direction every 1.5 seconds
-            zigzag_elapsed = now - self.zigzag_time
-            if zigzag_elapsed > 1.5:
-                self.search_direction *= -1
-                self.zigzag_time = now
+        if not slam_available or not odom_available:
+            # Fall back to simple turn if no SLAM data
+            vel.linear.x = 0.0
+            vel.angular.z = self.search_turn_speed * self.search_direction
+            return vel, f'SEARCH: no SLAM - turning (map:{slam_available} odom:{odom_available})'
 
-            vel.linear.x = self.search_speed
-            vel.angular.z = self.search_turn_speed * self.search_direction * 0.8
-            direction = "left" if self.search_direction > 0 else "right"
-            return vel, f'SEARCH P2: zigzag {direction} ({search_time:.1f}s)'
+        # Sub-state 2: EXPLORE - navigate to frontiers
+        if self.search_sub_state != SearchSubState.PATROL:
+            # Check if we have a goal or need a new one
+            if self.current_goal is None or self._goal_reached(self.current_goal):
+                if self.current_goal is not None:
+                    self.get_logger().info(f'Frontier goal reached at ({self.current_goal[0]:.1f}, {self.current_goal[1]:.1f})')
 
-        # Phase 2 (8-15s): Expanding spiral - increasing turn radius
-        elif search_time < self.search_timeout:
-            if self.search_phase != 2:
-                self.search_phase = 2
+                # Find new frontier
+                frontiers = self.frontier_explorer.find_frontiers()
+                new_goal = self.frontier_explorer.select_best_frontier(
+                    self.robot_x, self.robot_y, max_distance=EXPLORE_MAX_DISTANCE)
 
-            # Slower forward, wider turns as time goes on
-            progress = (search_time - 8.0) / (self.search_timeout - 8.0)
-            vel.linear.x = self.search_speed * (0.5 + 0.5 * progress)
-            # Decrease turn speed for wider spiral
-            vel.angular.z = self.search_turn_speed * (1.0 - 0.5 * progress) * self.search_direction
-            direction = "left" if self.search_direction > 0 else "right"
-            return vel, f'SEARCH P3: spiral {direction} ({search_time:.1f}s)'
+                if new_goal is not None:
+                    self.current_goal = new_goal
+                    self.search_sub_state = SearchSubState.EXPLORE
+                    self.get_logger().info(f'New frontier goal: ({new_goal[0]:.1f}, {new_goal[1]:.1f})')
+                else:
+                    # No frontiers - room fully mapped, switch to patrol
+                    self.search_sub_state = SearchSubState.PATROL
+                    self.current_goal = None
+                    self.get_logger().info('No frontiers - switching to PATROL mode')
 
-        # Phase 3 (>15s): Timeout - stop and wait
+            if self.search_sub_state == SearchSubState.EXPLORE and self.current_goal is not None:
+                vel, status = self._navigate_to_goal(vel, self.current_goal)
+                return vel, f'EXPLORE: {status}'
+
+        # Sub-state 3: PATROL - room fully mapped, patrol random locations
+        if self.search_sub_state == SearchSubState.PATROL:
+            if self.current_goal is None or self._goal_reached(self.current_goal):
+                # Pick a new random free cell
+                new_goal = self.frontier_explorer.get_random_free_cell(
+                    self.robot_x, self.robot_y,
+                    min_distance=PATROL_MIN_DISTANCE,
+                    max_distance=PATROL_MAX_DISTANCE)
+
+                if new_goal is not None:
+                    self.current_goal = new_goal
+                    self.get_logger().info(f'New patrol waypoint: ({new_goal[0]:.1f}, {new_goal[1]:.1f})')
+                else:
+                    # No valid patrol points - just turn and look
+                    vel.linear.x = 0.0
+                    vel.angular.z = self.search_turn_speed * self.search_direction
+                    return vel, 'PATROL: no waypoints - turning'
+
+            if self.current_goal is not None:
+                vel, status = self._navigate_to_goal(vel, self.current_goal)
+                return vel, f'PATROL: {status}'
+
+        # Fallback
+        vel.linear.x = 0.0
+        vel.angular.z = self.search_turn_speed * self.search_direction
+        return vel, 'SEARCH: fallback turning'
+
+    def _navigate_to_goal(self, vel, goal):
+        """
+        Navigate toward a goal position.
+        Returns (velocity, status_string).
+        """
+        goal_x, goal_y = goal
+
+        # Calculate angle to goal
+        dx = goal_x - self.robot_x
+        dy = goal_y - self.robot_y
+        distance = np.sqrt(dx * dx + dy * dy)
+        angle_to_goal = np.arctan2(dy, dx)
+
+        # Calculate angle error (normalize to -pi, pi)
+        angle_error = angle_to_goal - self.robot_yaw
+        while angle_error > np.pi:
+            angle_error -= 2 * np.pi
+        while angle_error < -np.pi:
+            angle_error += 2 * np.pi
+
+        # Turn toward goal
+        if abs(angle_error) > 0.3:  # ~17 degrees
+            # Need to turn significantly - don't move forward
+            vel.linear.x = 0.0
+            vel.angular.z = self.search_turn_speed * np.sign(angle_error) * min(1.0, abs(angle_error))
+            status = f'turning to goal ({np.degrees(angle_error):+.0f}°)'
         else:
-            return vel, f'SEARCH timeout ({search_time:.1f}s)'
+            # Roughly facing goal - move forward while correcting
+            vel.linear.x = self.search_speed
+            vel.angular.z = self.turn_speed * 0.5 * angle_error  # Proportional correction
+            status = f'moving to goal (d={distance:.1f}m, err={np.degrees(angle_error):+.0f}°)'
+
+        return vel, status
+
+    def _goal_reached(self, goal):
+        """Check if robot has reached the goal."""
+        if goal is None:
+            return True
+        dx = goal[0] - self.robot_x
+        dy = goal[1] - self.robot_y
+        distance = np.sqrt(dx * dx + dy * dy)
+        return distance < GOAL_REACHED_THRESHOLD
 
 
 def parse_args():
@@ -848,8 +1000,6 @@ def parse_args():
                         help='Stop if obstacle closer than this (m)')
     parser.add_argument('--obstacle-slow', type=float, default=DEFAULT_OBSTACLE_SLOW,
                         help='Slow down if obstacle closer than this (m)')
-    parser.add_argument('--search-timeout', type=float, default=DEFAULT_SEARCH_TIMEOUT,
-                        help='Give up searching after this many seconds')
     parser.add_argument('--search-speed', type=float, default=DEFAULT_SEARCH_SPEED,
                         help='Forward speed while searching (m/s)')
     return parser.parse_args()
