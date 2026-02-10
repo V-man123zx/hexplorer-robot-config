@@ -22,13 +22,25 @@ Visualization Manager:
       Plane Cell Count: 10
       Reference Frame: <Fixed Frame>
     - Class: rviz_default_plugins/PointCloud2
-      Name: LiDAR PointCloud
+      Name: LiDAR PointCloud (Filtered)
       Enabled: true
       Topic:
-        Value: /livox/pointcloud
+        Value: /livox/lidar_filtered
         Depth: 5
         History Policy: Keep Last
-        Reliability Policy: Reliable
+        Reliability Policy: Best Effort
+      Size (Pixels): 3
+      Style: Flat Squares
+      Color Transformer: Intensity
+      Decay Time: 0
+    - Class: rviz_default_plugins/PointCloud2
+      Name: LiDAR PointCloud (Raw)
+      Enabled: false
+      Topic:
+        Value: /livox/lidar
+        Depth: 5
+        History Policy: Keep Last
+        Reliability Policy: Best Effort
       Size (Pixels): 3
       Style: Flat Squares
       Color Transformer: Intensity
@@ -111,6 +123,14 @@ Visualization Manager:
       Enabled: true
       Topic:
         Value: /object_tracking/text
+        Depth: 5
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+    - Class: rviz_default_plugins/Marker
+      Name: Robot State
+      Enabled: true
+      Topic:
+        Value: /object_tracking/state_text
         Depth: 5
         History Policy: Keep Last
         Reliability Policy: Reliable

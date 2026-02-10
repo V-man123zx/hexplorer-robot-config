@@ -1,29 +1,27 @@
 #!/usr/bin/env python3
 """
-Smart Object Follower with Obstacle Avoidance and SLAM-based Search
+Smart Object Follower with Obstacle Avoidance and Visited-Area Search
 
-Combines object tracking with LiDAR-based obstacle avoidance and SLAM-based
-frontier exploration when target is lost.
+Combines object tracking with LiDAR-based obstacle avoidance and visited-area
+tracking for intelligent search when target is lost.
 
 State Machine:
     INIT -> IDLE -> FOLLOWING -> (EVADE | BLOCKED) -> FOLLOWING
-                 -> SEARCH (turn-in-place -> explore frontiers -> patrol)
+                 -> SEARCH (turn-in-place -> explore unvisited areas)
                  -> FOLLOWING
 
 Search Sub-states:
     1. TURN_IN_PLACE (5s): Turn toward where target was last seen
-    2. EXPLORE: Navigate to frontiers (boundaries of mapped/unmapped areas)
-    3. PATROL: When fully mapped, patrol random free cells
+    2. EXPLORE_UNVISITED: Navigate toward areas the robot hasn't visited
 
 Features:
 - Object following from /object_detection topic
 - LiDAR-based 360-degree obstacle avoidance
-- SLAM-based frontier exploration when target is lost
+- Visited-area tracking using MOLA odometry
 - No search timeout - keeps searching until target found
 - Safe sit-down on Ctrl+C
 
-IMPORTANT: SLAM system must be running separately (start_slam.sh)
-The smart follower reads /map but does not control SLAM lifecycle.
+Uses MOLA odometry (/state_estimator/pose) when available, falls back to /odom.
 
 Usage:
     source /home/robot/robot_controller_release/ros2_packages/setup.bash
@@ -44,7 +42,7 @@ from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
 from custom_msg.msg import RobotCommand, LivoxPointcloud
 from geometry_msgs.msg import Twist
 from sensor_msgs.msg import PointCloud2
-from nav_msgs.msg import OccupancyGrid, Odometry
+from nav_msgs.msg import Odometry
 from std_msgs.msg import String
 import numpy as np
 import struct
@@ -52,13 +50,8 @@ import json
 import time
 import signal
 import argparse
-import sys
-import os
+import math
 from enum import Enum, auto
-
-# Add hexplorer navigation to path for frontier explorer
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'navigation'))
-from frontier_explorer import FrontierExplorer
 
 
 # Default parameters
@@ -80,9 +73,8 @@ DEFAULT_EMERGENCY_STOP = 0.5       # m - EMERGENCY stop, never move forward
 # Search parameters
 TURN_IN_PLACE_DURATION = 5.0       # seconds to turn in place before exploring
 GOAL_REACHED_THRESHOLD = 0.5       # meters - consider goal reached if within this distance
-EXPLORE_MAX_DISTANCE = 10.0        # meters - max frontier distance to consider
-PATROL_MIN_DISTANCE = 2.0          # meters - min patrol waypoint distance
-PATROL_MAX_DISTANCE = 5.0          # meters - max patrol waypoint distance
+EXPLORE_RAY_LENGTH = 3.0           # meters - ray length for checking unvisited areas
+VISITED_CELL_SIZE = 0.5            # meters - grid cell size for visited area tracking
 
 # Image parameters
 IMAGE_WIDTH = 640
@@ -92,9 +84,11 @@ DEADZONE = 50  # pixels
 
 # LiDAR processing parameters
 LIDAR_SECTOR_ANGLE = 45            # Degrees for each direction sector (±45° = 90° total per direction)
-LIDAR_HEIGHT_MIN = 0.05            # Ignore points below this (filter ground)
-LIDAR_HEIGHT_MAX = 1.2             # Ignore points above this height (m)
-LIDAR_MIN_DISTANCE_M = 0.3         # Ignore LiDAR points closer than this (robot body)
+LIDAR_HEIGHT_MIN = 0.10            # Ignore points below this (filter ground) - raised from 0.05
+LIDAR_HEIGHT_MAX = 1.0             # Ignore points above this height (m) - lowered from 1.2
+LIDAR_MIN_DISTANCE_M = 0.35        # Ignore LiDAR points closer than this (robot body)
+LIDAR_MIN_POINTS_PER_SECTOR = 8    # Minimum points needed to consider obstacle real (was 3)
+LIDAR_PERCENTILE = 20              # Use 20th percentile for robustness (was 10th)
 
 # Direction sectors (in degrees, 0 = forward/+X, 90 = left/+Y, -90 = right/-Y, 180 = back/-X)
 # Each sector covers ±LIDAR_SECTOR_ANGLE from the center direction
@@ -113,9 +107,101 @@ class State(Enum):
 
 class SearchSubState(Enum):
     """Sub-states within SEARCH state."""
-    TURN_IN_PLACE = auto()  # Turn toward last seen direction (no forward motion)
-    EXPLORE = auto()        # Navigate to frontiers using SLAM map
-    PATROL = auto()         # When fully mapped, patrol random free cells
+    TURN_IN_PLACE = auto()      # Turn toward last seen direction (no forward motion)
+    EXPLORE_UNVISITED = auto()  # Navigate toward unvisited areas using odometry
+
+
+class VisitedAreaTracker:
+    """
+    Simple grid-based tracking of visited positions using odometry.
+
+    Divides the environment into cells and tracks which cells the robot
+    has visited. Used to guide search toward unexplored areas.
+    """
+
+    def __init__(self, cell_size=VISITED_CELL_SIZE):
+        self.cell_size = cell_size
+        self.visited = set()  # Set of (grid_x, grid_y) tuples
+
+    def mark_visited(self, x, y):
+        """Mark a position as visited."""
+        gx = int(x / self.cell_size)
+        gy = int(y / self.cell_size)
+        self.visited.add((gx, gy))
+
+    def is_visited(self, x, y):
+        """Check if a position has been visited."""
+        gx = int(x / self.cell_size)
+        gy = int(y / self.cell_size)
+        return (gx, gy) in self.visited
+
+    def count_visited_in_direction(self, robot_x, robot_y, angle_rad, ray_length=EXPLORE_RAY_LENGTH):
+        """
+        Count visited cells along a ray in a given direction.
+
+        Args:
+            robot_x, robot_y: Current robot position
+            angle_rad: Direction angle in radians (0 = +X, pi/2 = +Y)
+            ray_length: How far to check
+
+        Returns:
+            Number of visited cells along the ray
+        """
+        visited_count = 0
+        step = self.cell_size * 0.5  # Check at half-cell intervals
+        distance = 0.0
+
+        while distance < ray_length:
+            distance += step
+            check_x = robot_x + distance * math.cos(angle_rad)
+            check_y = robot_y + distance * math.sin(angle_rad)
+
+            if self.is_visited(check_x, check_y):
+                visited_count += 1
+
+        return visited_count
+
+    def get_unvisited_direction(self, robot_x, robot_y, robot_yaw, num_directions=8):
+        """
+        Find the direction with the fewest visited cells.
+
+        Args:
+            robot_x, robot_y: Current robot position
+            robot_yaw: Current robot heading (radians)
+            num_directions: Number of directions to check (default: 8)
+
+        Returns:
+            (best_angle, visited_ratio) where:
+            - best_angle is the absolute angle (radians) to navigate toward
+            - visited_ratio is 0.0 (all unvisited) to 1.0 (all visited)
+        """
+        best_angle = robot_yaw  # Default: continue forward
+        min_visited = float('inf')
+        max_cells = int(EXPLORE_RAY_LENGTH / (self.cell_size * 0.5))  # Max possible cells
+
+        for i in range(num_directions):
+            angle = robot_yaw + (2 * math.pi * i / num_directions)
+            # Normalize angle to -pi to pi
+            while angle > math.pi:
+                angle -= 2 * math.pi
+            while angle < -math.pi:
+                angle += 2 * math.pi
+
+            visited_count = self.count_visited_in_direction(robot_x, robot_y, angle)
+
+            if visited_count < min_visited:
+                min_visited = visited_count
+                best_angle = angle
+
+        visited_ratio = min_visited / max_cells if max_cells > 0 else 0.0
+        return best_angle, visited_ratio
+
+    def get_stats(self):
+        """Get statistics about visited area."""
+        return {
+            'visited_cells': len(self.visited),
+            'area_m2': len(self.visited) * self.cell_size * self.cell_size
+        }
 
 
 class SmartFollower(Node):
@@ -142,6 +228,9 @@ class SmartFollower(Node):
         self.cmd_pub = self.create_publisher(RobotCommand, '/robot_cmd', 10)
         self.vel_pub = self.create_publisher(Twist, '/vel_cmd', 10)
 
+        # Publisher for state visualization
+        self.state_pub = self.create_publisher(String, '/smart_follower/state', 10)
+
         # QoS for sensor data
         sensor_qos = QoSProfile(
             reliability=ReliabilityPolicy.BEST_EFFORT,
@@ -153,21 +242,27 @@ class SmartFollower(Node):
         self.create_subscription(
             String, '/object_detection', self.detection_callback, 10)
 
-        # Subscribe to LiDAR (both bridged and direct topics)
+        # Subscribe to LiDAR topics (prefer MOLA's filtered output)
+        # Primary: MOLA filtered lidar (cleanest data)
         self.create_subscription(
-            PointCloud2, '/livox/pointcloud', self.lidar_callback, sensor_qos)
+            PointCloud2, '/livox/lidar_filtered', self.lidar_callback, sensor_qos)
+        # Fallback: Raw lidar from TCP bridge (if MOLA not running)
+        self.create_subscription(
+            PointCloud2, '/livox/lidar', self.lidar_callback, sensor_qos)
+        # Direct Livox topic (if running directly on Jetson network)
         self.create_subscription(
             LivoxPointcloud, '/livox_Lidar_node/sn153/xyz/pointcloud',
             self.livox_callback, sensor_qos)
 
-        # Subscribe to SLAM map and odometry for exploration
+        # Subscribe to MOLA odometry (preferred) and fallback /odom
         self.create_subscription(
-            OccupancyGrid, '/map', self.map_callback, 10)
+            Odometry, '/state_estimator/pose', self.mola_odom_callback, sensor_qos)
         self.create_subscription(
             Odometry, '/odom', self.odom_callback, sensor_qos)
 
-        # Frontier explorer for SLAM-based search
-        self.frontier_explorer = FrontierExplorer(min_frontier_size=10)
+        # Visited area tracker for search
+        self.visited_tracker = VisitedAreaTracker(cell_size=VISITED_CELL_SIZE)
+        self._mola_odom_available = False
 
         # Robot pose from odometry
         self.robot_x = 0.0
@@ -178,8 +273,7 @@ class SmartFollower(Node):
 
         # Exploration state
         self.current_goal = None  # (x, y) goal for exploration
-        self.last_map_time = 0
-        self._slam_available = False
+        self.explore_target_angle = None  # Target angle for exploration
 
         # State machine
         self.state = State.INIT
@@ -215,8 +309,8 @@ class SmartFollower(Node):
         self.get_logger().info(f'  Max speed: {self.max_speed} m/s')
         self.get_logger().info(f'  Obstacle stop: {self.obstacle_stop}m')
         self.get_logger().info(f'  Obstacle slow: {self.obstacle_slow}m')
-        self.get_logger().info(f'  Search mode: SLAM-based (no timeout)')
-        self.get_logger().info('  NOTE: SLAM system must be running (start_slam.sh)')
+        self.get_logger().info(f'  Search mode: visited-area tracking (no timeout)')
+        self.get_logger().info('  Uses MOLA odometry when available, falls back to /odom')
 
     def detection_callback(self, msg):
         """Process detection message from Jetson."""
@@ -236,16 +330,28 @@ class SmartFollower(Node):
         except json.JSONDecodeError:
             pass
 
-    def map_callback(self, msg):
-        """Process SLAM map for frontier exploration."""
-        if self.frontier_explorer.update_map(msg):
-            self.last_map_time = time.time()
-            if not self._slam_available:
-                self._slam_available = True
-                self.get_logger().info('SLAM map received - frontier exploration available')
+    def mola_odom_callback(self, msg):
+        """Process MOLA odometry (preferred source)."""
+        self._update_pose_from_odometry(msg)
+
+        if not self._mola_odom_available:
+            self._mola_odom_available = True
+            self.get_logger().info('MOLA odometry received - using /state_estimator/pose')
 
     def odom_callback(self, msg):
-        """Process odometry for robot position tracking."""
+        """Process standard odometry (fallback if MOLA not available)."""
+        # Only use if MOLA odometry is not available
+        if self._mola_odom_available:
+            return
+
+        self._update_pose_from_odometry(msg)
+
+        if self._first_odom:
+            self._first_odom = False
+            self.get_logger().info('Odometry received from /odom - position tracking active')
+
+    def _update_pose_from_odometry(self, msg):
+        """Common odometry processing for both MOLA and standard odom."""
         self.robot_x = msg.pose.pose.position.x
         self.robot_y = msg.pose.pose.position.y
 
@@ -257,9 +363,8 @@ class SmartFollower(Node):
 
         self.last_odom_time = time.time()
 
-        if self._first_odom:
-            self._first_odom = False
-            self.get_logger().info(f'Odometry received - position tracking active')
+        # Mark current position as visited
+        self.visited_tracker.mark_visited(self.robot_x, self.robot_y)
 
     def lidar_callback(self, msg):
         """Process LiDAR pointcloud (bridged PointCloud2 topic)."""
@@ -350,16 +455,20 @@ class SmartFollower(Node):
         back_mask = (angles_deg > 180 - LIDAR_SECTOR_ANGLE) | (angles_deg < -180 + LIDAR_SECTOR_ANGLE)
         right_mask = (angles_deg >= -180 + LIDAR_SECTOR_ANGLE) & (angles_deg < -LIDAR_SECTOR_ANGLE)
 
-        # Calculate minimum distance for each direction (using 10th percentile for robustness)
+        # Calculate minimum distance for each direction
+        # Use LIDAR_PERCENTILE (20th) with minimum LIDAR_MIN_POINTS_PER_SECTOR points
+        # This reduces false positives from noise/outliers
         front_distances = distances[front_mask]
         back_distances = distances[back_mask]
         left_distances = distances[left_mask]
         right_distances = distances[right_mask]
 
-        self.lidar_front = np.percentile(front_distances, 10) if len(front_distances) > 3 else float('inf')
-        self.lidar_back = np.percentile(back_distances, 10) if len(back_distances) > 3 else float('inf')
-        self.lidar_left = np.percentile(left_distances, 10) if len(left_distances) > 3 else float('inf')
-        self.lidar_right = np.percentile(right_distances, 10) if len(right_distances) > 3 else float('inf')
+        min_pts = LIDAR_MIN_POINTS_PER_SECTOR
+        pct = LIDAR_PERCENTILE
+        self.lidar_front = np.percentile(front_distances, pct) if len(front_distances) >= min_pts else float('inf')
+        self.lidar_back = np.percentile(back_distances, pct) if len(back_distances) >= min_pts else float('inf')
+        self.lidar_left = np.percentile(left_distances, pct) if len(left_distances) >= min_pts else float('inf')
+        self.lidar_right = np.percentile(right_distances, pct) if len(right_distances) >= min_pts else float('inf')
 
         # Legacy: overall minimum distance (front only for backward compatibility)
         self.lidar_min_distance = self.lidar_front
@@ -372,9 +481,9 @@ class SmartFollower(Node):
 
         # Determine obstacle side (for front obstacles, used in state machine)
         front_points = points[front_mask]
-        if len(front_distances) > 3:
+        if len(front_distances) >= min_pts:
             close_mask = front_distances < self.obstacle_stop
-            if np.sum(close_mask) > 3:
+            if np.sum(close_mask) >= min_pts:
                 close_points = front_points[close_mask]
                 avg_y = np.mean(close_points[:, 1])
                 if avg_y > 0.15:
@@ -633,7 +742,7 @@ class SmartFollower(Node):
         log_counter = 0
 
         self.get_logger().info('Smart follower running - Ctrl+C to stop')
-        self.get_logger().info('Waiting for detection on /object_detection and LiDAR on /livox/pointcloud')
+        self.get_logger().info('Waiting for detection on /object_detection and LiDAR on /livox/lidar_filtered or /livox/lidar')
 
         try:
             while self.running:
@@ -776,6 +885,30 @@ class SmartFollower(Node):
                 self.cmd_pub.publish(cmd)
                 self.vel_pub.publish(vel)
 
+                # Publish state for visualization
+                state_msg = String()
+                state_data = {
+                    'state': self.state.name,
+                    'status': status,
+                    'lidar': {
+                        'front': round(self.lidar_front, 2),
+                        'back': round(self.lidar_back, 2),
+                        'left': round(self.lidar_left, 2),
+                        'right': round(self.lidar_right, 2)
+                    },
+                    'velocity': {
+                        'linear': round(vel.linear.x, 2),
+                        'angular': round(vel.angular.z, 2)
+                    },
+                    'target_detected': target_detected
+                }
+                if self.state == State.SEARCH:
+                    state_data['search_sub_state'] = self.search_sub_state.name
+                    stats = self.visited_tracker.get_stats()
+                    state_data['visited_cells'] = stats['visited_cells']
+                state_msg.data = json.dumps(state_data)
+                self.state_pub.publish(state_msg)
+
                 # Log periodically
                 log_counter += 1
                 if log_counter % 25 == 0:
@@ -858,18 +991,18 @@ class SmartFollower(Node):
 
     def _search_pattern(self, vel, search_time):
         """
-        Execute SLAM-based search pattern. Returns (velocity, status).
+        Execute visited-area-based search pattern. Returns (velocity, status).
 
         Search sub-states:
         1. TURN_IN_PLACE (0-5s): Turn in place toward last seen direction
-        2. EXPLORE: Navigate to frontiers using SLAM map
-        3. PATROL: When fully mapped, patrol random free cells
+        2. EXPLORE_UNVISITED: Navigate toward areas robot hasn't visited
         """
         # Sub-state 1: Turn in place (first 5 seconds)
         if search_time < TURN_IN_PLACE_DURATION:
             if self.search_sub_state != SearchSubState.TURN_IN_PLACE:
                 self.search_sub_state = SearchSubState.TURN_IN_PLACE
                 self.current_goal = None
+                self.explore_target_angle = None
                 self.get_logger().info(f'Search: TURN_IN_PLACE phase')
 
             # Turn in place - NO forward motion
@@ -878,111 +1011,75 @@ class SmartFollower(Node):
             direction = "left" if self.search_direction > 0 else "right"
             return vel, f'SEARCH: turn {direction} ({search_time:.1f}s/{TURN_IN_PLACE_DURATION}s)'
 
-        # After turn-in-place, use SLAM-based exploration
-        slam_available = self._slam_available and (time.time() - self.last_map_time) < 5.0
+        # Check if odometry is available
         odom_available = (time.time() - self.last_odom_time) < 1.0
 
-        if not slam_available or not odom_available:
-            # Fall back to simple turn if no SLAM data
+        if not odom_available:
+            # Fall back to simple turn if no odometry
             vel.linear.x = 0.0
             vel.angular.z = self.search_turn_speed * self.search_direction
-            return vel, f'SEARCH: no SLAM - turning (map:{slam_available} odom:{odom_available})'
+            return vel, f'SEARCH: no odom - turning'
 
-        # Sub-state 2: EXPLORE - navigate to frontiers
-        if self.search_sub_state != SearchSubState.PATROL:
-            # Check if we have a goal or need a new one
-            if self.current_goal is None or self._goal_reached(self.current_goal):
-                if self.current_goal is not None:
-                    self.get_logger().info(f'Frontier goal reached at ({self.current_goal[0]:.1f}, {self.current_goal[1]:.1f})')
+        # Sub-state 2: EXPLORE_UNVISITED - navigate toward unvisited areas
+        if self.search_sub_state != SearchSubState.EXPLORE_UNVISITED:
+            self.search_sub_state = SearchSubState.EXPLORE_UNVISITED
+            self.explore_target_angle = None
+            stats = self.visited_tracker.get_stats()
+            self.get_logger().info(
+                f'Search: EXPLORE_UNVISITED phase (visited: {stats["visited_cells"]} cells, '
+                f'{stats["area_m2"]:.1f}m²)')
 
-                # Find new frontier
-                frontiers = self.frontier_explorer.find_frontiers()
-                new_goal = self.frontier_explorer.select_best_frontier(
-                    self.robot_x, self.robot_y, max_distance=EXPLORE_MAX_DISTANCE)
+        # Periodically re-evaluate best direction (every ~3 seconds or when angle is None)
+        should_recalculate = (
+            self.explore_target_angle is None or
+            int(search_time) % 3 == 0 and int(search_time * 10) % 10 == 0
+        )
 
-                if new_goal is not None:
-                    self.current_goal = new_goal
-                    self.search_sub_state = SearchSubState.EXPLORE
-                    self.get_logger().info(f'New frontier goal: ({new_goal[0]:.1f}, {new_goal[1]:.1f})')
-                else:
-                    # No frontiers - room fully mapped, switch to patrol
-                    self.search_sub_state = SearchSubState.PATROL
-                    self.current_goal = None
-                    self.get_logger().info('No frontiers - switching to PATROL mode')
+        if should_recalculate:
+            best_angle, visited_ratio = self.visited_tracker.get_unvisited_direction(
+                self.robot_x, self.robot_y, self.robot_yaw)
 
-            if self.search_sub_state == SearchSubState.EXPLORE and self.current_goal is not None:
-                vel, status = self._navigate_to_goal(vel, self.current_goal)
-                return vel, f'EXPLORE: {status}'
+            if self.explore_target_angle is None or abs(best_angle - self.explore_target_angle) > 0.3:
+                self.explore_target_angle = best_angle
+                angle_deg = math.degrees(best_angle)
+                self.get_logger().info(
+                    f'Explore: target angle {angle_deg:.0f}° '
+                    f'(visited ratio: {visited_ratio:.1%})')
 
-        # Sub-state 3: PATROL - room fully mapped, patrol random locations
-        if self.search_sub_state == SearchSubState.PATROL:
-            if self.current_goal is None or self._goal_reached(self.current_goal):
-                # Pick a new random free cell
-                new_goal = self.frontier_explorer.get_random_free_cell(
-                    self.robot_x, self.robot_y,
-                    min_distance=PATROL_MIN_DISTANCE,
-                    max_distance=PATROL_MAX_DISTANCE)
+        # Navigate toward target angle
+        vel, status = self._navigate_to_angle(vel, self.explore_target_angle)
+        stats = self.visited_tracker.get_stats()
+        return vel, f'EXPLORE: {status} (visited: {stats["visited_cells"]} cells)'
 
-                if new_goal is not None:
-                    self.current_goal = new_goal
-                    self.get_logger().info(f'New patrol waypoint: ({new_goal[0]:.1f}, {new_goal[1]:.1f})')
-                else:
-                    # No valid patrol points - just turn and look
-                    vel.linear.x = 0.0
-                    vel.angular.z = self.search_turn_speed * self.search_direction
-                    return vel, 'PATROL: no waypoints - turning'
-
-            if self.current_goal is not None:
-                vel, status = self._navigate_to_goal(vel, self.current_goal)
-                return vel, f'PATROL: {status}'
-
-        # Fallback
-        vel.linear.x = 0.0
-        vel.angular.z = self.search_turn_speed * self.search_direction
-        return vel, 'SEARCH: fallback turning'
-
-    def _navigate_to_goal(self, vel, goal):
+    def _navigate_to_angle(self, vel, target_angle):
         """
-        Navigate toward a goal position.
+        Navigate toward a target angle while moving forward.
         Returns (velocity, status_string).
         """
-        goal_x, goal_y = goal
-
-        # Calculate angle to goal
-        dx = goal_x - self.robot_x
-        dy = goal_y - self.robot_y
-        distance = np.sqrt(dx * dx + dy * dy)
-        angle_to_goal = np.arctan2(dy, dx)
-
         # Calculate angle error (normalize to -pi, pi)
-        angle_error = angle_to_goal - self.robot_yaw
-        while angle_error > np.pi:
-            angle_error -= 2 * np.pi
-        while angle_error < -np.pi:
-            angle_error += 2 * np.pi
+        angle_error = target_angle - self.robot_yaw
+        while angle_error > math.pi:
+            angle_error -= 2 * math.pi
+        while angle_error < -math.pi:
+            angle_error += 2 * math.pi
 
-        # Turn toward goal
-        if abs(angle_error) > 0.3:  # ~17 degrees
-            # Need to turn significantly - don't move forward
+        # Turn toward target angle
+        if abs(angle_error) > 0.4:  # ~23 degrees - need significant turn
+            # Turn in place first
             vel.linear.x = 0.0
-            vel.angular.z = self.search_turn_speed * np.sign(angle_error) * min(1.0, abs(angle_error))
-            status = f'turning to goal ({np.degrees(angle_error):+.0f}°)'
+            vel.angular.z = self.search_turn_speed * np.sign(angle_error) * min(1.5, abs(angle_error))
+            status = f'turning ({math.degrees(angle_error):+.0f}°)'
+        elif abs(angle_error) > 0.15:  # ~9 degrees - turn while moving slowly
+            vel.linear.x = self.search_speed * 0.5
+            vel.angular.z = self.turn_speed * 0.7 * angle_error
+            status = f'adjusting ({math.degrees(angle_error):+.0f}°)'
         else:
-            # Roughly facing goal - move forward while correcting
+            # Roughly facing target - move forward
             vel.linear.x = self.search_speed
-            vel.angular.z = self.turn_speed * 0.5 * angle_error  # Proportional correction
-            status = f'moving to goal (d={distance:.1f}m, err={np.degrees(angle_error):+.0f}°)'
+            vel.angular.z = self.turn_speed * 0.3 * angle_error  # Small correction
+            status = f'exploring ({math.degrees(self.robot_yaw):.0f}°)'
 
         return vel, status
-
-    def _goal_reached(self, goal):
-        """Check if robot has reached the goal."""
-        if goal is None:
-            return True
-        dx = goal[0] - self.robot_x
-        dy = goal[1] - self.robot_y
-        distance = np.sqrt(dx * dx + dy * dy)
-        return distance < GOAL_REACHED_THRESHOLD
 
 
 def parse_args():

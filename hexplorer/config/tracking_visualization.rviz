@@ -6,6 +6,16 @@ Panels:
 Visualization Manager:
   Class: ""
   Displays:
+    - Class: rviz_default_plugins/Grid
+      Name: Grid
+      Enabled: true
+      Cell Size: 1
+      Line Style:
+        Line Width: 0.03
+        Value: Lines
+      Plane: XY
+      Plane Cell Count: 20
+      Reference Frame: <Fixed Frame>
     - Class: rviz_default_plugins/TF
       Name: TF
       Enabled: true
@@ -13,6 +23,48 @@ Visualization Manager:
       Show Arrows: true
       Show Axes: true
       Show Names: true
+    - Class: rviz_default_plugins/PointCloud2
+      Name: LiDAR (Filtered)
+      Enabled: true
+      Topic:
+        Value: /livox/lidar_filtered
+        Depth: 5
+        History Policy: Keep Last
+        Reliability Policy: Best Effort
+      Size (Pixels): 2
+      Style: Flat Squares
+      Color Transformer: FlatColor
+      Color: 0; 255; 0
+      Decay Time: 0
+    - Class: rviz_default_plugins/Odometry
+      Name: MOLA Odometry
+      Enabled: true
+      Topic:
+        Value: /state_estimator/pose
+        Depth: 5
+        History Policy: Keep Last
+        Reliability Policy: Best Effort
+      Position Tolerance: 0.1
+      Angle Tolerance: 0.1
+      Keep: 100
+      Shape:
+        Value: Arrow
+        Alpha: 1
+        Axes Length: 0.3
+        Axes Radius: 0.03
+        Color: 255; 85; 0
+        Head Length: 0.1
+        Head Radius: 0.05
+        Shaft Length: 0.2
+        Shaft Radius: 0.03
+    - Class: rviz_default_plugins/Marker
+      Name: Robot State
+      Enabled: true
+      Topic:
+        Value: /object_tracking/state_text
+        Depth: 5
+        History Policy: Keep Last
+        Reliability Policy: Reliable
     - Class: rviz_default_plugins/MarkerArray
       Name: Detection Markers
       Enabled: true
@@ -63,7 +115,7 @@ Visualization Manager:
       Normalize Range: true
   Global Options:
     Background Color: 48; 48; 48
-    Fixed Frame: camera_color_optical_frame
+    Fixed Frame: odom
     Frame Rate: 30
   Tools:
     - Class: rviz_default_plugins/Interact

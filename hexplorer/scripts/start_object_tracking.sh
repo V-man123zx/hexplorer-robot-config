@@ -46,11 +46,10 @@ for arg in "$@"; do
             ;;
         --smart)
             SMART_MODE=true
-            SLAM_MODE=true  # Smart mode requires SLAM
             shift
             ;;
         --slam)
-            SLAM_MODE=true
+            # Legacy flag, ignored (MOLA starts automatically with --smart if needed)
             shift
             ;;
     esac
@@ -64,13 +63,10 @@ if [ "$RVIZ_MODE" = true ]; then
 elif [ "$TEST_MODE" = true ]; then
     echo "  MODE: TEST (terminal visualization)"
 elif [ "$SMART_MODE" = true ]; then
-    echo "  MODE: SMART (obstacle avoidance + SLAM-based search)"
-    echo "  SLAM: Enabled (map builds continuously)"
+    echo "  MODE: SMART (obstacle avoidance + visited-area search)"
+    echo "  MOLA Odometry: Enabled (for position tracking)"
 else
     echo "  MODE: FULL (robot will follow object)"
-    if [ "$SLAM_MODE" = true ]; then
-        echo "  SLAM: Enabled"
-    fi
 fi
 echo ""
 
@@ -82,11 +78,11 @@ export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 # Configurable parameters
 TARGET_COLOR="${TARGET_COLOR:-yellow}"
 TARGET_DISTANCE="${TARGET_DISTANCE:-800}"
-MAX_SPEED="${MAX_SPEED:-0.4}"
-TURN_SPEED="${TURN_SPEED:-0.6}"
-OBSTACLE_STOP="${OBSTACLE_STOP:-0.8}"
-OBSTACLE_SLOW="${OBSTACLE_SLOW:-1.2}"
-SEARCH_SPEED="${SEARCH_SPEED:-0.2}"
+MAX_SPEED="${MAX_SPEED:-0.6}"
+TURN_SPEED="${TURN_SPEED:-0.5}"
+OBSTACLE_STOP="${OBSTACLE_STOP:-0.4}"
+OBSTACLE_SLOW="${OBSTACLE_SLOW:-0.8}"
+SEARCH_SPEED="${SEARCH_SPEED:-0.6}"
 
 echo "Tracking parameters:"
 echo "  - Target color:    $TARGET_COLOR"
@@ -96,7 +92,7 @@ echo "  - Turn speed:      ${TURN_SPEED} rad/s"
 if [ "$SMART_MODE" = true ]; then
     echo "  - Obstacle stop:   ${OBSTACLE_STOP}m"
     echo "  - Obstacle slow:   ${OBSTACLE_SLOW}m"
-    echo "  - Search mode:     SLAM-based (no timeout)"
+    echo "  - Search mode:     visited-area tracking"
 fi
 echo ""
 
@@ -113,6 +109,10 @@ cleanup() {
             kill "$pid" 2>/dev/null || true
         fi
     done
+
+    # Kill MOLA processes (they may not be in PIDS array if started with ros2 launch)
+    pkill -9 -f "mola-cli" 2>/dev/null || true
+    pkill -f "filterpass" 2>/dev/null || true
 
     # Kill processes on Jetson
     echo "Stopping Jetson processes..."
@@ -142,9 +142,12 @@ sshpass -p "$JETSON_PASS" scp -o StrictHostKeyChecking=no \
     "$JETSON_USER@$JETSON_IP:/home/robot/jetson_object_tracker.py" 2>/dev/null
 echo "  Script synced"
 
-# Start LiDAR if in smart mode or slam mode (needed for obstacle avoidance and SLAM)
-if [ "$SMART_MODE" = true ] || [ "$SLAM_MODE" = true ]; then
-    echo "[3/9] Starting Livox LiDAR driver on Jetson..."
+# Start LiDAR if in smart mode (needed for obstacle avoidance)
+if [ "$SMART_MODE" = true ]; then
+    # Source MOLA workspace for smart mode
+    source ~/MOLA-SLAM/mola_ws/install/setup.bash 2>/dev/null || true
+
+    echo "[3/11] Starting Livox LiDAR driver on Jetson..."
     sshpass -p "$JETSON_PASS" ssh -o StrictHostKeyChecking=no "$JETSON_USER@$JETSON_IP" \
         "source /opt/ros/humble/setup.bash && \
          source /home/robot/robot_controller_release/ros2_packages/setup.bash && \
@@ -152,7 +155,7 @@ if [ "$SMART_MODE" = true ] || [ "$SLAM_MODE" = true ]; then
     PIDS+=($!)
     sleep 3
 
-    echo "[4/9] Starting Livox TCP bridge on Jetson..."
+    echo "[4/11] Starting Livox TCP bridge on Jetson..."
     sshpass -p "$JETSON_PASS" ssh -o StrictHostKeyChecking=no "$JETSON_USER@$JETSON_IP" \
         "source /opt/ros/humble/setup.bash && \
          source /home/robot/robot_controller_release/ros2_packages/setup.bash && \
@@ -160,48 +163,46 @@ if [ "$SMART_MODE" = true ] || [ "$SLAM_MODE" = true ]; then
     PIDS+=($!)
     sleep 2
 
-    echo "[5/9] Starting Livox TCP receiver on Mini PC..."
+    echo "[5/11] Starting Livox TCP receiver on Mini PC..."
     python3 "$HEXPLORER_DIR/bridges/livox_tcp_receiver.py" &
     PIDS+=($!)
-    sleep 1
+    sleep 2
 
-    # Start SLAM components if in SLAM mode
-    if [ "$SLAM_MODE" = true ]; then
-        echo "[6/9] Starting odometry publisher..."
-        python3 "$HEXPLORER_DIR/slam/odometry_publisher.py" &
-        PIDS+=($!)
-        sleep 0.5
+    echo "[6/11] Starting static TF: odom -> base_link..."
+    ros2 run tf2_ros static_transform_publisher \
+        --x 0 --y 0 --z 0 --qx 0 --qy 0 --qz 0 --qw 1 \
+        --frame-id odom --child-frame-id base_link &
+    PIDS+=($!)
+    sleep 0.3
 
-        echo "[7/9] Starting static TF: base_link -> livox_frame..."
-        ros2 run tf2_ros static_transform_publisher \
-            --x 0.0 --y 0.0 --z 0.2 \
-            --qx 0.0 --qy 0.0 --qz 0.0 --qw 1.0 \
-            --frame-id base_link --child-frame-id livox_frame &
-        PIDS+=($!)
-        sleep 0.5
+    echo "[7/11] Starting static TF: base_link -> livox_frame..."
+    ros2 run tf2_ros static_transform_publisher \
+        --x 0.0 --y 0.0 --z 0.2 \
+        --qx 0.0 --qy 0.0 --qz 0.0 --qw 1.0 \
+        --frame-id base_link --child-frame-id livox_frame &
+    PIDS+=($!)
+    sleep 0.3
 
-        echo "[8/9] Starting pointcloud to laserscan converter..."
-        ros2 run pointcloud_to_laserscan pointcloud_to_laserscan_node \
-            --ros-args \
-            --params-file "$HEXPLORER_DIR/slam/config/pc_to_scan.yaml" \
-            -r cloud_in:=/livox/pointcloud &
-        PIDS+=($!)
-        sleep 0.5
+    echo "[8/11] Starting filterpass node for MOLA..."
+    python3 ~/MOLA-SLAM/mola_ws/install/mola_bringup/lib/mola_bringup/filterpass.py &
+    PIDS+=($!)
+    sleep 2
 
-        echo "[9/9] Starting slam_toolbox..."
-        ros2 launch slam_toolbox online_async_launch.py \
-            slam_params_file:="$HEXPLORER_DIR/slam/config/slam_params.yaml" &
-        PIDS+=($!)
-        sleep 2
+    echo "[9/11] Starting MOLA LiDAR Odometry (background)..."
+    export MOLA_LIDAR_TOPIC=/livox/lidar_filtered
+    export MOLA_USE_FIXED_LIDAR_POSE=true
+    export MOLA_WITH_GUI=false
+    ros2 launch mola_lidar_odometry ros2-lidar-odometry-katana.launch.py \
+        lidar_topic_name:=/livox/lidar_filtered \
+        ignore_lidar_pose_from_tf:=true \
+        use_rviz:=false \
+        use_mola_gui:=false &
+    PIDS+=($!)
+    sleep 3
 
-        STEP_TRACKER="10"
-        STEP_RECEIVER="11"
-        TOTAL_STEPS="12"
-    else
-        STEP_TRACKER="6"
-        STEP_RECEIVER="7"
-        TOTAL_STEPS="8"
-    fi
+    STEP_TRACKER="10"
+    STEP_RECEIVER="11"
+    TOTAL_STEPS="12"
 else
     STEP_TRACKER="3"
     STEP_RECEIVER="4"
@@ -233,8 +234,41 @@ sleep 2
 
 echo ""
 echo "========================================="
-if [ "$RVIZ_MODE" = true ]; then
-    echo "  RVIZ MODE - 3D Visualization"
+if [ "$SMART_MODE" = true ] && [ "$RVIZ_MODE" = true ]; then
+    echo "  SMART + RVIZ MODE"
+    echo "========================================="
+    echo ""
+    echo "Robot will stand up and follow the $TARGET_COLOR object"
+    echo "RViz visualization enabled - see /smart_follower/state for status"
+    echo "Press Ctrl+C to stop (robot will sit down safely)"
+    echo ""
+
+    # Start TF publisher for camera frame
+    ros2 run tf2_ros static_transform_publisher --x 0 --y 0 --z 0 --qx 0 --qy 0 --qz 0 --qw 1 \
+        --frame-id map --child-frame-id camera_color_optical_frame &
+    PIDS+=($!)
+
+    # Start RViz visualizer node (subscribes to /smart_follower/state)
+    python3 "$HEXPLORER_DIR/tracking/tracking_rviz_visualizer.py" &
+    PIDS+=($!)
+    sleep 1
+
+    # Start RViz in background
+    rviz2 -d "$HEXPLORER_DIR/config/tracking_visualization.rviz" &
+    PIDS+=($!)
+    sleep 2
+
+    # Run smart follower in foreground
+    python3 "$HEXPLORER_DIR/tracking/smart_follower.py" \
+        --target-distance "$TARGET_DISTANCE" \
+        --max-speed "$MAX_SPEED" \
+        --turn-speed "$TURN_SPEED" \
+        --obstacle-stop "$OBSTACLE_STOP" \
+        --obstacle-slow "$OBSTACLE_SLOW" \
+        --search-speed "$SEARCH_SPEED"
+
+elif [ "$RVIZ_MODE" = true ]; then
+    echo "  RVIZ MODE - 3D Visualization (no robot control)"
     echo "========================================="
     echo ""
     echo "Starting RViz visualizer and TF publisher..."
@@ -265,12 +299,13 @@ elif [ "$TEST_MODE" = true ]; then
     python3 "$HEXPLORER_DIR/tracking/tracking_visualizer.py"
 
 elif [ "$SMART_MODE" = true ]; then
-    echo "  SMART MODE - Obstacle Avoidance + SLAM-Based Search"
+    echo "  SMART MODE - Obstacle Avoidance + Visited-Area Search"
     echo "========================================="
     echo ""
     echo "Robot will stand up and follow the $TARGET_COLOR object"
-    echo "Uses LiDAR for obstacle avoidance and SLAM-based frontier exploration"
-    echo "Search: turn-in-place (5s) -> explore frontiers -> patrol"
+    echo "Uses MOLA-filtered LiDAR for obstacle avoidance"
+    echo "Uses MOLA odometry (/state_estimator/pose) for position tracking"
+    echo "Search: turn-in-place (5s) -> explore unvisited areas"
     echo "Press Ctrl+C to stop (robot will sit down safely)"
     echo ""
 

@@ -3,15 +3,18 @@
 RViz Visualization for Object Tracking
 
 Publishes detection results as RViz markers and overlaid images.
+Also displays smart_follower state when available.
 
 Topics published:
 - /object_tracking/marker (visualization_msgs/Marker) - 3D marker at detected object
 - /object_tracking/image (sensor_msgs/Image) - Camera image with detection overlay
 - /object_tracking/text (visualization_msgs/Marker) - Text label with distance
+- /object_tracking/state_text (visualization_msgs/Marker) - Robot state display
 
 Subscribes to:
 - /object_detection (std_msgs/String) - Detection data from receiver
 - /camera/color/image_raw (sensor_msgs/Image) - Camera image (optional)
+- /smart_follower/state (std_msgs/String) - Robot state from smart follower
 
 Usage:
     source /opt/ros/humble/setup.bash
@@ -54,10 +57,15 @@ class TrackingRVizVisualizer(Node):
         self.text_pub = self.create_publisher(Marker, '/object_tracking/text', 10)
         self.marker_array_pub = self.create_publisher(MarkerArray, '/object_tracking/markers', 10)
         self.image_pub = self.create_publisher(Image, '/object_tracking/image', 10)
+        self.state_text_pub = self.create_publisher(Marker, '/object_tracking/state_text', 10)
 
         # Subscribers
         self.create_subscription(
             String, '/object_detection', self.detection_callback, 10)
+
+        # Subscribe to smart follower state
+        self.create_subscription(
+            String, '/smart_follower/state', self.state_callback, 10)
 
         # Subscribe to camera images (multiple possible topics)
         self.create_subscription(
@@ -70,6 +78,8 @@ class TrackingRVizVisualizer(Node):
         self.last_detection_time = 0
         self.last_image = None
         self.last_image_time = 0
+        self.last_robot_state = None
+        self.last_robot_state_time = 0
 
         # Timer for publishing markers even without new detections
         self.timer = self.create_timer(0.1, self.publish_visualization)
@@ -86,6 +96,14 @@ class TrackingRVizVisualizer(Node):
         try:
             self.last_detection = json.loads(msg.data)
             self.last_detection_time = time.time()
+        except json.JSONDecodeError:
+            pass
+
+    def state_callback(self, msg):
+        """Process smart follower state message."""
+        try:
+            self.last_robot_state = json.loads(msg.data)
+            self.last_robot_state_time = time.time()
         except json.JSONDecodeError:
             pass
 
@@ -225,9 +243,14 @@ class TrackingRVizVisualizer(Node):
             # Detection stale - delete markers
             self._publish_delete_markers(stamp)
 
+        # Publish robot state text if available
+        robot_state_fresh = (now - self.last_robot_state_time) < 1.0
+        if robot_state_fresh and self.last_robot_state:
+            self._publish_state_marker(stamp)
+
         # Publish overlaid image if we have both detection and image
         if image_fresh and self.last_image is not None:
-            self._publish_overlaid_image(detection_fresh)
+            self._publish_overlaid_image(detection_fresh, robot_state_fresh)
 
     def _get_target_color(self, label):
         """Get RViz color for target label."""
@@ -255,6 +278,68 @@ class TrackingRVizVisualizer(Node):
         color.a = 1.0
         return color
 
+    def _publish_state_marker(self, stamp):
+        """Publish robot state as text marker in RViz."""
+        s = self.last_robot_state
+
+        # Build state text
+        state = s.get('state', '?')
+        status = s.get('status', '')
+
+        # Color based on state
+        if state == 'FOLLOWING':
+            r, g, b = 0.0, 1.0, 0.0  # Green
+        elif state == 'SEARCH':
+            r, g, b = 1.0, 1.0, 0.0  # Yellow
+            sub_state = s.get('search_sub_state', '')
+            if sub_state:
+                state = f'{state}/{sub_state}'
+        elif state == 'EVADE':
+            r, g, b = 1.0, 0.5, 0.0  # Orange
+        elif state == 'BLOCKED':
+            r, g, b = 1.0, 0.0, 0.0  # Red
+        elif state == 'IDLE':
+            r, g, b = 0.5, 0.5, 0.5  # Gray
+        else:
+            r, g, b = 1.0, 1.0, 1.0  # White
+
+        # Build display text
+        lidar = s.get('lidar', {})
+        vel = s.get('velocity', {})
+        lines = [
+            f'STATE: {state}',
+            f'{status}',
+            f'LiDAR: F={lidar.get("front", "?"):.1f} B={lidar.get("back", "?"):.1f}',
+            f'       L={lidar.get("left", "?"):.1f} R={lidar.get("right", "?"):.1f}',
+            f'Vel: {vel.get("linear", 0):.2f} m/s, {vel.get("angular", 0):.2f} rad/s',
+        ]
+        if 'visited_cells' in s:
+            lines.append(f'Visited: {s["visited_cells"]} cells')
+
+        text = '\n'.join(lines)
+
+        # Create marker - position in top-left of view
+        marker = Marker()
+        marker.header.stamp = stamp
+        marker.header.frame_id = 'camera_color_optical_frame'
+        marker.ns = 'robot_state'
+        marker.id = 10
+        marker.type = Marker.TEXT_VIEW_FACING
+        marker.action = Marker.ADD
+        marker.pose.position.x = -0.3
+        marker.pose.position.y = -0.4
+        marker.pose.position.z = 1.0
+        marker.scale.z = 0.08  # Text height
+        marker.color.r = r
+        marker.color.g = g
+        marker.color.b = b
+        marker.color.a = 1.0
+        marker.text = text
+        marker.lifetime.sec = 1
+        marker.lifetime.nanosec = 0
+
+        self.state_text_pub.publish(marker)
+
     def _publish_delete_markers(self, stamp):
         """Publish markers with DELETE action."""
         for ns, id in [('object_detection', 0), ('object_detection_text', 1), ('object_bbox', 2)]:
@@ -269,8 +354,8 @@ class TrackingRVizVisualizer(Node):
             elif ns == 'object_detection_text':
                 self.text_pub.publish(marker)
 
-    def _publish_overlaid_image(self, detection_fresh):
-        """Publish camera image with detection overlay."""
+    def _publish_overlaid_image(self, detection_fresh, robot_state_fresh=False):
+        """Publish camera image with detection and state overlay."""
         if self.last_image is None:
             return
 
@@ -288,6 +373,48 @@ class TrackingRVizVisualizer(Node):
             # Unsupported encoding, just forward the image
             self.image_pub.publish(img_msg)
             return
+
+        # Draw robot state in top-left corner
+        if robot_state_fresh and self.last_robot_state:
+            s = self.last_robot_state
+            state = s.get('state', '?')
+            status = s.get('status', '')
+            sub_state = s.get('search_sub_state', '')
+
+            # Color based on state (BGR)
+            if state == 'FOLLOWING':
+                state_color = (0, 255, 0)  # Green
+            elif state == 'SEARCH':
+                state_color = (0, 255, 255)  # Yellow
+                if sub_state:
+                    state = f'{state}/{sub_state}'
+            elif state == 'EVADE':
+                state_color = (0, 165, 255)  # Orange
+            elif state == 'BLOCKED':
+                state_color = (0, 0, 255)  # Red
+            elif state == 'IDLE':
+                state_color = (128, 128, 128)  # Gray
+            else:
+                state_color = (255, 255, 255)  # White
+
+            # Draw state banner at top
+            img[0:30, 0:img_msg.width] = (40, 40, 40)  # Dark background
+            # Draw colored state indicator bar
+            img[0:30, 0:8] = state_color
+
+            # Draw LiDAR bars at bottom
+            lidar = s.get('lidar', {})
+            bar_height = 15
+            bar_y = img_msg.height - bar_height
+            img[bar_y:img_msg.height, 0:img_msg.width] = (40, 40, 40)
+
+            # Show LiDAR distances as colored bars
+            # Front (center top section)
+            front_dist = lidar.get('front', 10)
+            front_width = min(200, int(front_dist * 50))
+            front_color = (0, 255, 0) if front_dist > 1.2 else ((0, 255, 255) if front_dist > 0.8 else (0, 0, 255))
+            cx = img_msg.width // 2
+            img[bar_y:img_msg.height, cx-front_width//2:cx+front_width//2] = front_color
 
         # Draw detection overlay if fresh
         if detection_fresh and self.last_detection and self.last_detection['detected']:
@@ -327,7 +454,7 @@ class TrackingRVizVisualizer(Node):
             # Draw text background and text (simple rectangle for label)
             text = f'{label}: {d["distance_mm"]}mm'
             text_x = max(0, x)
-            text_y = max(0, y - 25)
+            text_y = max(30, y - 25)  # Avoid state banner
             # Black background
             img[text_y:text_y+20, text_x:min(text_x+len(text)*8, img_msg.width)] = (0, 0, 0)
             # Note: For proper text, would need cv2.putText, but keeping dependencies minimal

@@ -655,14 +655,21 @@ See: `/home/robot/robot_controller_release/WIFI_BOOT_SETUP_LOG.md`
 
 ---
 
-## One-Command Sensor Demo (2026-01-28)
+## One-Command Sensor Demo (2026-02-10)
 
 ### Overview
-Single script that launches all sensors (RealSense + Livox LiDAR) with TCP bridges, TF transforms, and RViz visualization.
+Single script that launches all sensors (RealSense + Livox LiDAR) with TCP bridges, TF transforms, and RViz visualization. Optionally includes MOLA odometry.
 
 ### Quick Start
 ```bash
+# Basic sensor demo with tracking
 bash /home/robot/start_sensor_demo.sh
+
+# With MOLA odometry/SLAM
+bash /home/robot/start_sensor_demo.sh --slam
+
+# No object tracking (full depth available)
+bash /home/robot/start_sensor_demo.sh --no-track
 ```
 
 Press `Ctrl+C` to stop all processes (includes automatic cleanup on Jetson).
@@ -676,7 +683,8 @@ Press `Ctrl+C` to stop all processes (includes automatic cleanup on Jetson).
 | 3 | Livox TCP bridge | Jetson |
 | 4 | Depth bridge receiver | Mini PC |
 | 5 | Livox TCP receiver | Mini PC |
-| 6 | TF publishers (lidar + camera) | Mini PC |
+| 6 | MOLA filterpass + odometry (if --slam) | Mini PC |
+| 7 | TF publishers (lidar + camera) | Mini PC |
 | 7 | RViz with sensor config | Mini PC |
 
 ### Available Topics After Launch
@@ -759,10 +767,10 @@ python3 /home/robot/obstacle_avoidance.py --help
 
 ---
 
-## Object Tracking System (2026-02-04)
+## Object Tracking System (2026-02-10)
 
 ### Overview
-Multi-component object tracking system with color-based detection on Jetson, TCP streaming to Mini PC, and robot following capability.
+Multi-component object tracking system with color-based detection on Jetson, TCP streaming to Mini PC, and robot following capability. Smart mode includes MOLA odometry for position tracking.
 
 ### Architecture
 ```
@@ -776,6 +784,14 @@ jetson_object_tracker.py                 detection_receiver.py
          |                                        v
          +-------- TCP (57 bytes/msg) -----> object_follower.py
          +-------- TCP (images) -----------> tracking_rviz_visualizer.py
+
+Smart mode adds:
+  livox_lidar_node  ->  filterpass.py  ->  MOLA odometry
+                        (/livox/lidar)     (/livox/lidar_filtered)
+                                                    |
+                                                    v
+                                           smart_follower.py
+                                           (uses /state_estimator/pose)
 ```
 
 ### Quick Start
@@ -790,7 +806,7 @@ bash ~/hexplorer/scripts/start_object_tracking.sh --rviz
 # Robot follows yellow object
 bash ~/hexplorer/scripts/start_object_tracking.sh
 
-# SMART MODE: Robot follows with obstacle avoidance + active search
+# SMART MODE: Robot follows with MOLA odometry + obstacle avoidance + visited-area search
 bash ~/hexplorer/scripts/start_object_tracking.sh --smart
 
 # Track different color
@@ -837,6 +853,7 @@ TARGET_COLOR=red bash ~/hexplorer/scripts/start_object_tracking.sh --rviz
 | `~/hexplorer/tracking/jetson_object_tracker.py` | Runs on Jetson, color detection |
 | `~/hexplorer/tracking/detection_receiver.py` | TCP client, ROS2 publisher |
 | `~/hexplorer/tracking/object_follower.py` | Robot control to follow object |
+| `~/hexplorer/tracking/smart_follower.py` | Smart follower with MOLA + obstacle avoidance |
 | `~/hexplorer/tracking/tracking_rviz_visualizer.py` | RViz markers and overlay |
 | `~/hexplorer/scripts/start_object_tracking.sh` | Launch script |
 
@@ -865,10 +882,10 @@ bash ~/hexplorer/scripts/start_sensor_demo.sh --no-track
 
 ---
 
-## Smart Object Follower (2026-02-04)
+## Smart Object Follower (2026-02-10)
 
 ### Overview
-Enhanced object following with LiDAR-based obstacle avoidance and active search patterns. Combines tracking from `object_follower.py` with LiDAR sensing (always available during tracking).
+Enhanced object following with LiDAR-based obstacle avoidance and visited-area search. Combines tracking from `object_follower.py` with LiDAR sensing (always available during tracking). When target is lost, uses odometry-based visited area tracking to search unexplored areas.
 
 ### Quick Start
 ```bash
@@ -895,20 +912,32 @@ bash ~/hexplorer/scripts/start_object_tracking.sh --smart
 | Yes | Yes | Opposite side | EVADE - steer around |
 | No | Any | N/A | SEARCH pattern |
 
-### Active Search Pattern
+### Search Pattern (Visited-Area Tracking)
 
-| Phase | Time | Behavior |
-|-------|------|----------|
-| 1 | 0-3s | Turn toward last seen + walk forward |
-| 2 | 3-8s | Zigzag - walk forward, alternate ±45° |
-| 3 | 8-15s | Expanding spiral |
-| 4 | >15s | Timeout - return to IDLE |
+The search uses odometry to track visited areas and navigate toward unvisited regions.
+
+| Phase | Duration | Behavior |
+|-------|----------|----------|
+| TURN_IN_PLACE | 0-5s | Turn in place toward last seen direction (no forward motion) |
+| EXPLORE_UNVISITED | 5s+ | Navigate toward areas robot hasn't visited |
+
+**No timeout** - keeps searching until target is found.
+
+Uses MOLA odometry (`/state_estimator/pose`) when available, falls back to `/odom`.
+
+### How Visited-Area Tracking Works
+
+- Robot position is tracked on a 0.5m grid
+- Each grid cell is marked as "visited" when the robot passes through
+- During search, checks 8 directions with 3m rays
+- Navigates toward direction with fewest visited cells
+- Re-evaluates best direction every ~3 seconds
 
 ### Parameters
 
 ```bash
 # Environment variables
-TARGET_COLOR=yellow OBSTACLE_STOP=0.8 SEARCH_TIMEOUT=15 \
+TARGET_COLOR=yellow OBSTACLE_STOP=0.8 \
   bash ~/hexplorer/scripts/start_object_tracking.sh --smart
 ```
 
@@ -919,8 +948,13 @@ TARGET_COLOR=yellow OBSTACLE_STOP=0.8 SEARCH_TIMEOUT=15 \
 | Turn speed | `--turn-speed` | 0.15 rad/s | Angular velocity |
 | Obstacle stop | `--obstacle-stop` | 0.8m | Stop if closer |
 | Obstacle slow | `--obstacle-slow` | 1.2m | Slow if closer |
-| Search timeout | `--search-timeout` | 15s | Give up after |
 | Search speed | `--search-speed` | 0.1 m/s | Speed while searching |
+
+### LiDAR Topics Used
+
+Smart follower subscribes to (in priority order):
+1. `/livox/lidar_filtered` - MOLA filtered (preferred, cleanest data)
+2. `/livox/lidar` - Raw from TCP bridge (fallback)
 
 ### 360° Obstacle Avoidance
 
@@ -956,11 +990,13 @@ Safety checks apply to:
 
 | Sensor | During Tracking | Notes |
 |--------|-----------------|-------|
-| LiDAR (`/livox/pointcloud`) | ✅ Always | Separate Ethernet |
+| LiDAR (`/livox/lidar_filtered`) | ✅ Always | MOLA-filtered, cleanest |
+| LiDAR (`/livox/lidar`) | ✅ Always | Raw data, fallback |
+| MOLA odometry (`/state_estimator/pose`) | ✅ Always | Position tracking |
 | Depth camera | ❌ Not available | Shared with tracker |
 | Color camera | ✅ Via tracker | Detection + images |
 
-LiDAR is sufficient for obstacle avoidance and preferred for reliability.
+MOLA-filtered LiDAR is preferred for obstacle avoidance (removes noise).
 
 ### Key Files
 
