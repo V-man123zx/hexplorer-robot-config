@@ -8,6 +8,7 @@ import struct
 import threading
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy, HistoryPolicy
 from sensor_msgs.msg import PointCloud2, PointField
 
 JETSON_IP = '192.168.1.20'
@@ -17,8 +18,14 @@ class LivoxTCPReceiver(Node):
     def __init__(self):
         super().__init__('livox_tcp_receiver')
 
-        # Publish to /livox/lidar for MOLA-SLAM compatibility
-        self.pub = self.create_publisher(PointCloud2, '/livox/lidar', 10)
+        # Use BEST_EFFORT QoS for sensor data (matches MOLA and filterpass)
+        sensor_qos = QoSProfile(
+            reliability=ReliabilityPolicy.BEST_EFFORT,
+            durability=DurabilityPolicy.VOLATILE,
+            history=HistoryPolicy.KEEP_LAST,
+            depth=5
+        )
+        self.pub = self.create_publisher(PointCloud2, '/livox/lidar', sensor_qos)
 
         self._running = True
         self._recv_thread = threading.Thread(target=self.receive_data, daemon=True)
