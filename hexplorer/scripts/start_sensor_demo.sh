@@ -8,7 +8,8 @@
 #   bash start_sensor_demo.sh --slam       # Add MOLA odometry/SLAM
 #
 # Environment variables:
-#   TARGET_COLOR=red    # Color to track (yellow, red, green, blue)
+#   DETECT_MODE=yolo    # Detection mode: yolo, yolo-world, color
+#   TARGET=person       # What to detect (see start_object_tracking.sh for full list)
 
 set -e
 
@@ -27,7 +28,20 @@ for arg in "$@"; do
     esac
 done
 
-TARGET_COLOR="${TARGET_COLOR:-yellow}"
+DETECT_MODE="${DETECT_MODE:-yolo}"
+
+if [ -n "${TARGET:-}" ]; then
+    : # TARGET already set
+elif [ -n "${TARGET_COLOR:-}" ]; then
+    TARGET="$TARGET_COLOR"
+else
+    case "$DETECT_MODE" in
+        yolo)       TARGET="person" ;;
+        yolo-world) TARGET="person" ;;
+        color)      TARGET="yellow" ;;
+        *)          TARGET="person" ;;
+    esac
+fi
 
 declare -a PIDS=()
 
@@ -47,7 +61,7 @@ trap cleanup SIGINT SIGTERM EXIT
 
 echo "=== Hexplorer Sensor Demo ==="
 if [ "$ENABLE_TRACKING" = true ]; then
-    echo "  Object Tracking: ENABLED (color: $TARGET_COLOR)"
+    echo "  Object Tracking: ENABLED (mode: $DETECT_MODE, target: $TARGET)"
 else
     echo "  Object Tracking: DISABLED"
 fi
@@ -70,7 +84,7 @@ if [ "$ENABLE_TRACKING" = true ]; then
     sshpass -p "$JETSON_PASS" scp -o StrictHostKeyChecking=no \
         "$HEXPLORER_DIR/tracking/jetson_object_tracker.py" \
         robot@$JETSON_IP:/home/robot/jetson_object_tracker.py 2>/dev/null
-    ensure_jetson_tracker "$TARGET_COLOR" "--stream-images"
+    ensure_jetson_tracker "$TARGET" "--stream-images" "$DETECT_MODE"
 else
     echo "[2/10] Ensuring depth publisher on Jetson..."
     ensure_jetson_depth

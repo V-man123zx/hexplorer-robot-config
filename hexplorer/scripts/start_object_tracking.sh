@@ -9,14 +9,23 @@
 #   bash start_object_tracking.sh --test    # Test mode - terminal visualizer (no robot)
 #   bash start_object_tracking.sh --rviz    # RViz visualization mode (no robot)
 #
+# Detection modes:
+#   DETECT_MODE=yolo         # Default. 80 COCO classes (person, bottle, chair, dog...)
+#   DETECT_MODE=yolo-world   # Open vocabulary - detect anything by text description
+#   DETECT_MODE=color        # Simple HSV color tracking (yellow, red, green, blue)
+#
 # Environment variables:
-#   TARGET_COLOR=yellow     # Color to track (yellow, red, green, blue)
-#   TARGET_DISTANCE=800     # Distance to maintain (mm)
-#   MAX_SPEED=0.3           # Max forward speed (m/s)
-#   TURN_SPEED=0.15         # Turn speed (rad/s)
-#   OBSTACLE_STOP=0.8       # Stop if obstacle closer (m) [smart mode]
-#   OBSTACLE_SLOW=1.2       # Slow if obstacle closer (m) [smart mode]
-#   SEARCH_SPEED=0.5        # Search speed (m/s) [smart mode]
+#   DETECT_MODE=yolo          # Detection mode (see above)
+#   TARGET=person             # What to detect:
+#                             #   yolo: person, bottle, chair, cup, dog, any... (80 COCO classes)
+#                             #   yolo-world: "red toolbox", "fire extinguisher", "water bottle"...
+#                             #   color: yellow, red, green, blue
+#   TARGET_DISTANCE=800       # Distance to maintain (mm)
+#   MAX_SPEED=0.6             # Max forward speed (m/s)
+#   TURN_SPEED=0.8            # Turn speed (rad/s)
+#   OBSTACLE_STOP=0.4         # Stop if obstacle closer (m) [smart mode]
+#   OBSTACLE_SLOW=0.8         # Slow if obstacle closer (m) [smart mode]
+#   SEARCH_SPEED=0.6          # Search speed (m/s) [smart mode]
 
 set -e
 
@@ -59,16 +68,33 @@ source /home/robot/robot_controller_release/ros2_packages/setup.bash
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 
 # Configurable parameters
-TARGET_COLOR="${TARGET_COLOR:-yellow}"
+DETECT_MODE="${DETECT_MODE:-yolo}"
+
+# TARGET is the primary variable. Fall back to TARGET_COLOR for backward compat.
+if [ -n "${TARGET:-}" ]; then
+    : # TARGET already set by user
+elif [ -n "${TARGET_COLOR:-}" ]; then
+    TARGET="$TARGET_COLOR"  # backward compat
+else
+    # Smart defaults per mode
+    case "$DETECT_MODE" in
+        yolo)       TARGET="person" ;;
+        yolo-world) TARGET="person" ;;
+        color)      TARGET="yellow" ;;
+        *)          TARGET="person" ;;
+    esac
+fi
+
 TARGET_DISTANCE="${TARGET_DISTANCE:-800}"
 MAX_SPEED="${MAX_SPEED:-0.6}"
-TURN_SPEED="${TURN_SPEED:-0.5}"
+TURN_SPEED="${TURN_SPEED:-0.8}"
 OBSTACLE_STOP="${OBSTACLE_STOP:-0.4}"
 OBSTACLE_SLOW="${OBSTACLE_SLOW:-0.8}"
 SEARCH_SPEED="${SEARCH_SPEED:-0.6}"
 
 echo "Tracking parameters:"
-echo "  - Target color:    $TARGET_COLOR"
+echo "  - Detect mode:     $DETECT_MODE"
+echo "  - Target:          $TARGET"
 echo "  - Target distance: ${TARGET_DISTANCE}mm"
 echo "  - Max speed:       ${MAX_SPEED} m/s"
 echo "  - Turn speed:      ${TURN_SPEED} rad/s"
@@ -154,15 +180,15 @@ fi
 # Start object tracker on Jetson (checks if already running)
 echo "[$STEP_TRACKER/$TOTAL_STEPS] Ensuring object tracker on Jetson..."
 STREAM_FLAG=""
-if [ "$RVIZ_MODE" = true ] || [ "$SMART_MODE" = true ]; then
+if [ "$RVIZ_MODE" = true ] || [ "$SMART_MODE" = true ] || [ "$DETECT_MODE" != "color" ]; then
     STREAM_FLAG="--stream-images"
 fi
-ensure_jetson_tracker "$TARGET_COLOR" "$STREAM_FLAG"
+ensure_jetson_tracker "$TARGET" "$STREAM_FLAG" "$DETECT_MODE"
 
 # Start detection receiver
 echo "[$STEP_RECEIVER/$TOTAL_STEPS] Starting detection receiver..."
 RECEIVER_ARGS=""
-if [ "$RVIZ_MODE" = true ] || [ "$SMART_MODE" = true ]; then
+if [ "$RVIZ_MODE" = true ] || [ "$SMART_MODE" = true ] || [ "$DETECT_MODE" != "color" ]; then
     RECEIVER_ARGS="--with-images"
 fi
 ensure_local "detection_receiver" "python3 $HEXPLORER_DIR/tracking/detection_receiver.py $RECEIVER_ARGS"

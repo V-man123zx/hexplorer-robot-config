@@ -32,9 +32,19 @@ bash ~/hexplorer/scripts/start_sensor_demo.sh --no-track
 bash ~/hexplorer/scripts/start_object_tracking.sh --rviz
 ```
 
-### Robot Follows Yellow Object
+### Robot Follows Detected Object
 ```bash
+# YOLO — follow a person (default)
 bash ~/hexplorer/scripts/start_object_tracking.sh
+
+# YOLO — follow a specific COCO class
+TARGET=bottle bash ~/hexplorer/scripts/start_object_tracking.sh
+
+# YOLO-World — follow any object by text description
+DETECT_MODE=yolo-world TARGET="yellow ball" bash ~/hexplorer/scripts/start_object_tracking.sh
+
+# Color mode — follow by color (legacy)
+DETECT_MODE=color TARGET=red bash ~/hexplorer/scripts/start_object_tracking.sh
 ```
 
 ### Smart Follower (obstacle avoidance + SLAM-based search)
@@ -68,7 +78,7 @@ bash ~/hexplorer/scripts/start_macarena.sh
 ### Tracking (`tracking/`)
 | File | Description |
 |------|-------------|
-| `jetson_object_tracker.py` | Color-based object detection (runs on Jetson) |
+| `jetson_object_tracker.py` | Object detection: YOLO, YOLO-World, or color (runs on Jetson) |
 | `detection_receiver.py` | Receives detections via TCP, publishes to ROS2 |
 | `object_follower.py` | Robot control to follow detected object |
 | `smart_follower.py` | Smart follower with obstacle avoidance + SLAM search |
@@ -158,11 +168,20 @@ Jetson LiDAR services (driver + TCP bridge) run as a systemd service that auto-s
 | `/vel_cmd` | Twist | Velocity control |
 | `/robot_state` | RobotState | Robot feedback |
 
+## Detection Modes
+
+| Mode | Model | FPS (TensorRT) | Use Case |
+|------|-------|-----------------|----------|
+| `yolo` (default) | YOLOv8n | ~63 | Fast tracking of 80 COCO classes (person, bottle, chair, etc.) |
+| `yolo-world` | YOLOv8s-worldv2 | ~62 (PyTorch) | Detect any object by text description ("yellow ball", "red toolbox") |
+| `color` | HSV thresholds | ~30 | Simple color tracking (yellow, red, green, blue) |
+
 ## Environment Variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `TARGET_COLOR` | yellow | Color to track (yellow/red/green/blue) |
+| `DETECT_MODE` | yolo | Detection mode: `yolo`, `yolo-world`, or `color` |
+| `TARGET` | person | What to detect (COCO class, text description, or color name) |
 | `TARGET_DISTANCE` | 800 | Target follow distance (mm) |
 | `STOP_DISTANCE` | 0.6 | Obstacle stop distance (m) |
 | `FORWARD_SPEED` | 0.5 | Walking speed (m/s) |

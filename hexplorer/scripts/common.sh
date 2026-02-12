@@ -7,9 +7,11 @@ JETSON_USER="robot"
 JETSON_PASS="123"
 
 # Check if a process is running on Jetson
+# Uses bracket trick to prevent pgrep from matching the SSH shell's own command line
 jetson_running() {
+    local pattern="[${1:0:1}]${1:1}"
     sshpass -p "$JETSON_PASS" ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 \
-        "$JETSON_USER@$JETSON_IP" "pgrep -f '$1' >/dev/null 2>&1" 2>/dev/null
+        "$JETSON_USER@$JETSON_IP" "pgrep -f '$pattern' >/dev/null 2>&1" 2>/dev/null
 }
 
 # Ensure LiDAR services are running on Jetson (driver + TCP bridge)
@@ -21,9 +23,11 @@ ensure_jetson_lidar() {
 }
 
 # Ensure object tracker is running on Jetson (kills depth publisher if active since they share camera)
+# Args: $1=target (default: yellow), $2=stream_flag, $3=detect_mode (default: color)
 ensure_jetson_tracker() {
-    local target_color="${1:-yellow}"
+    local target="${1:-yellow}"
     local stream_flag="${2:-}"
+    local detect_mode="${3:-color}"
 
     if jetson_running "jetson_object_tracker.py"; then
         echo "  Object tracker already running on Jetson"
@@ -38,15 +42,20 @@ ensure_jetson_tracker() {
         sleep 1
     fi
 
-    echo "  Starting object tracker on Jetson..."
-    local args="--mode color --target $target_color"
-    [ -n "$stream_flag" ] && args="$args --stream-images"
+    echo "  Starting object tracker on Jetson (mode: $detect_mode, target: $target)..."
+    local extra_args=""
+    [ -n "$stream_flag" ] && extra_args="--stream-images"
 
-    sshpass -p "$JETSON_PASS" ssh -o StrictHostKeyChecking=no "$JETSON_USER@$JETSON_IP" \
-        "export LD_LIBRARY_PATH=/usr/local/lib:\$LD_LIBRARY_PATH && \
-         export PYTHONPATH=/usr/local/lib/python3.10/dist-packages:\$PYTHONPATH && \
-         nohup python3 /home/robot/jetson_object_tracker.py $args > /tmp/tracker.log 2>&1 &" 2>/dev/null
-    sleep 3
+    sshpass -p "$JETSON_PASS" ssh -f -o StrictHostKeyChecking=no "$JETSON_USER@$JETSON_IP" \
+        "nohup /home/robot/start_tracker.sh $detect_mode '$target' '$extra_args' > /tmp/tracker.log 2>&1 < /dev/null &" 2>/dev/null
+
+    # YOLO models need extra time to load
+    if [ "$detect_mode" = "yolo" ] || [ "$detect_mode" = "yolo-world" ]; then
+        echo "  Waiting for YOLO model to load..."
+        sleep 8
+    else
+        sleep 3
+    fi
 }
 
 # Ensure depth publisher is running on Jetson (kills tracker if active since they share camera)

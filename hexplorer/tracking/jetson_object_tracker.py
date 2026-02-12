@@ -7,6 +7,8 @@ via TCP to the Mini PC for robot control.
 
 Features:
 - Color-based detection (yellow, red, green, blue, or custom HSV)
+- YOLOv8 detection (80 COCO classes: person, bottle, chair, etc.)
+- YOLO-World detection (any object by text description)
 - Direct RealSense access via pyrealsense2 v2.55
 - Depth at detection centroid
 - TCP server on port 9997
@@ -16,6 +18,9 @@ Usage:
     python3 jetson_object_tracker.py --mode color --target yellow
     python3 jetson_object_tracker.py --mode color --target red
     python3 jetson_object_tracker.py --mode color --target custom --hsv-min 20,100,100 --hsv-max 40,255,255
+    python3 jetson_object_tracker.py --mode yolo --target person
+    python3 jetson_object_tracker.py --mode yolo --target any
+    python3 jetson_object_tracker.py --mode yolo-world --target "red toolbox"
 """
 
 import socket
@@ -37,6 +42,20 @@ try:
 except ImportError:
     print("ERROR: opencv-python not found. Install with: pip3 install opencv-python")
     exit(1)
+
+# Optional: YOLO support (only needed for yolo/yolo-world modes)
+YOLO_AVAILABLE = False
+try:
+    from ultralytics import YOLO as UltralyticsYOLO
+    YOLO_AVAILABLE = True
+except ImportError:
+    pass
+
+# YOLO constants
+YOLO_MODEL_PATH = '/home/robot/yolov8n.pt'
+YOLO_WORLD_MODEL_PATH = '/home/robot/yolov8s-worldv2.pt'
+YOLO_CONF_THRESHOLD = 0.4
+YOLO_IOU_THRESHOLD = 0.45
 
 HOST = '0.0.0.0'
 PORT = 9997
@@ -130,12 +149,21 @@ class ObjectTracker:
                 print("ERROR: --hsv-min and --hsv-max required for custom target")
                 exit(1)
 
+        # YOLO model
+        self.yolo_model = None
+        default_conf = 0.5 if args.mode == 'yolo-world' else YOLO_CONF_THRESHOLD
+        self.yolo_conf = getattr(args, 'yolo_conf', None) or default_conf
+
         print(f"Object Tracker initializing...")
         print(f"  Mode: {args.mode}")
         print(f"  Target: {args.target}")
         if self.custom_hsv_min:
             print(f"  HSV min: {self.custom_hsv_min}")
             print(f"  HSV max: {self.custom_hsv_max}")
+
+        # Initialize YOLO model if needed
+        if args.mode in ('yolo', 'yolo-world'):
+            self._init_yolo()
 
         # Initialize RealSense
         self._init_realsense()
@@ -151,6 +179,167 @@ class ObjectTracker:
             print(f"Image streaming enabled on port {IMAGE_PORT}")
 
         print(f"Object Tracker ready")
+
+    def _init_yolo(self):
+        """Initialize YOLO model for object detection.
+
+        Automatically uses TensorRT .engine if available for 2-3x faster
+        inference. Use --export-engine to do one-time TensorRT conversion.
+        """
+        if not YOLO_AVAILABLE:
+            print("ERROR: ultralytics not installed. Install with:")
+            print("  conda activate deeplearning && pip install ultralytics")
+            exit(1)
+
+        if self.args.mode == 'yolo-world':
+            pt_path = getattr(self.args, 'yolo_model', None) or YOLO_WORLD_MODEL_PATH
+        else:
+            pt_path = getattr(self.args, 'yolo_model', None) or YOLO_MODEL_PATH
+
+        # Check for TensorRT engine (2-3x faster)
+        # Note: yolo-world MUST use .pt because set_classes() doesn't work with TensorRT
+        import os
+        engine_path = os.path.splitext(pt_path)[0] + '.engine'
+        if self.args.mode == 'yolo-world':
+            model_path = pt_path
+            print(f"  Loading PyTorch model: {model_path} (required for open-vocabulary)")
+        elif os.path.exists(engine_path) and not getattr(self.args, 'export_engine', False):
+            model_path = engine_path
+            print(f"  Loading TensorRT engine: {model_path}")
+        else:
+            model_path = pt_path
+            print(f"  Loading PyTorch model: {model_path}")
+
+        self.yolo_model = UltralyticsYOLO(model_path)
+
+        # Handle --export-engine: export and exit
+        if getattr(self.args, 'export_engine', False):
+            print(f"  Exporting TensorRT engine from {pt_path}...")
+            print("  This takes a few minutes on first run.")
+            self.yolo_model.export(format='engine', imgsz=640, half=True)
+            print(f"  TensorRT engine saved to: {engine_path}")
+            print("  Re-run without --export-engine to use it.")
+            exit(0)
+
+        if self.args.mode == 'yolo-world' and model_path.endswith('.pt'):
+            # Set text prompt classes for open-vocabulary detection
+            targets = [t.strip() for t in self.args.target.split(',')]
+            print(f"  Setting YOLO-World classes: {targets}")
+            self.yolo_model.set_classes(targets)
+
+        # Move to CUDA if available (only for PyTorch models, engine handles this)
+        if model_path.endswith('.pt'):
+            try:
+                self.yolo_model.to('cuda')
+                print("  YOLO model on CUDA")
+            except Exception:
+                print("  YOLO model on CPU (CUDA not available)")
+        else:
+            print("  TensorRT engine (GPU-native)")
+
+        # Warmup inference
+        print("  Warming up YOLO model...")
+        dummy = np.zeros((480, 640, 3), dtype=np.uint8)
+        self.yolo_model.predict(dummy, conf=self.yolo_conf, iou=YOLO_IOU_THRESHOLD, verbose=False)
+        print("  YOLO model ready")
+
+    def _detect_object_yolo(self, color_image, depth_image):
+        """Detect object using YOLO model and return detection info."""
+        detection = {
+            'detected': False,
+            'center_x': 0,
+            'center_y': 0,
+            'bbox_x': 0,
+            'bbox_y': 0,
+            'bbox_w': 0,
+            'bbox_h': 0,
+            'distance_mm': 0,
+            'confidence': 0.0,
+            'timestamp': int(time.time()),
+            'label': self.args.target
+        }
+
+        results = self.yolo_model.predict(
+            color_image, conf=self.yolo_conf, iou=YOLO_IOU_THRESHOLD, verbose=False
+        )
+
+        if not results or len(results[0].boxes) == 0:
+            return detection
+
+        boxes = results[0].boxes
+        target = self.args.target.lower()
+
+        best_box = None
+        best_score = 0.0  # confidence for specific target, area for 'any'
+        best_label = ''
+
+        for i in range(len(boxes)):
+            cls_id = int(boxes.cls[i])
+            conf = float(boxes.conf[i])
+            label = results[0].names[cls_id]
+
+            if target != 'any' and self.args.mode != 'yolo-world':
+                # For standard YOLO: filter by class name
+                if label.lower() != target:
+                    continue
+
+            x1, y1, x2, y2 = boxes.xyxy[i].cpu().numpy().astype(int)
+            w = x2 - x1
+            h = y2 - y1
+            area = w * h
+
+            if target == 'any':
+                # Pick largest bounding box (closest/biggest object)
+                score = area
+            else:
+                # Pick highest confidence match
+                score = conf
+
+            if score > best_score:
+                best_score = score
+                best_box = (x1, y1, w, h)
+                best_label = label
+                if target != 'any':
+                    best_score = conf
+
+        if best_box is None:
+            return detection
+
+        x, y, w, h = best_box
+        cx = x + w // 2
+        cy = y + h // 2
+
+        # Get depth at centroid
+        depth_val = 0
+        if depth_image is not None:
+            depth_val = int(depth_image[cy, cx])
+            # If depth is 0 at exact centroid, try median of 10x10 patch
+            if depth_val == 0:
+                py_min = max(0, cy - 5)
+                py_max = min(depth_image.shape[0], cy + 5)
+                px_min = max(0, cx - 5)
+                px_max = min(depth_image.shape[1], cx + 5)
+                patch = depth_image[py_min:py_max, px_min:px_max]
+                valid = patch[patch > 0]
+                if len(valid) > 0:
+                    depth_val = int(np.median(valid))
+
+        if depth_val > MAX_DETECTION_DISTANCE:
+            depth_val = 0
+
+        detection['detected'] = True
+        detection['center_x'] = cx
+        detection['center_y'] = cy
+        detection['bbox_x'] = x
+        detection['bbox_y'] = y
+        detection['bbox_w'] = w
+        detection['bbox_h'] = h
+        detection['distance_mm'] = depth_val
+        detection['confidence'] = float(best_score) if target != 'any' else min(1.0, best_score / 80000)
+        detection['label'] = best_label
+
+        self.detection_count += 1
+        return detection
 
     def _init_realsense(self):
         """Initialize RealSense pipeline."""
@@ -439,7 +628,10 @@ class ObjectTracker:
                 depth_image = np.asanyarray(depth_frame.get_data()) if depth_frame else None
 
                 # Detect object
-                detection = self._detect_object(color_image, depth_image)
+                if self.args.mode in ('yolo', 'yolo-world'):
+                    detection = self._detect_object_yolo(color_image, depth_image)
+                else:
+                    detection = self._detect_object(color_image, depth_image)
 
                 # Send detection to clients
                 self._send_detection(detection)
@@ -477,14 +669,22 @@ def parse_args():
         description='Object tracker for Jetson Orin Nano',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
-    parser.add_argument('--mode', choices=['color', 'yolo'], default='color',
-                        help='Detection mode (yolo not yet implemented)')
+    parser.add_argument('--mode', choices=['color', 'yolo', 'yolo-world'], default='color',
+                        help='Detection mode: color (HSV), yolo (80 COCO classes), yolo-world (any text description)')
     parser.add_argument('--target', default='yellow',
-                        help='Target to detect: yellow, red, green, blue, or custom')
+                        help='Target to detect. color: yellow/red/green/blue/custom. '
+                             'yolo: COCO class name (person, bottle, chair...) or "any". '
+                             'yolo-world: any text description ("red toolbox", "fire extinguisher")')
     parser.add_argument('--hsv-min', type=str, default=None,
-                        help='HSV minimum for custom target (H,S,V)')
+                        help='HSV minimum for custom color target (H,S,V)')
     parser.add_argument('--hsv-max', type=str, default=None,
-                        help='HSV maximum for custom target (H,S,V)')
+                        help='HSV maximum for custom color target (H,S,V)')
+    parser.add_argument('--yolo-model', type=str, default=None,
+                        help='Path to custom YOLO model file (overrides default)')
+    parser.add_argument('--yolo-conf', type=float, default=YOLO_CONF_THRESHOLD,
+                        help='YOLO confidence threshold')
+    parser.add_argument('--export-engine', action='store_true',
+                        help='Export YOLO model to TensorRT engine and exit (one-time, 2-3x speedup)')
     parser.add_argument('--port', type=int, default=PORT,
                         help='TCP server port for detections')
     parser.add_argument('--stream-images', action='store_true',

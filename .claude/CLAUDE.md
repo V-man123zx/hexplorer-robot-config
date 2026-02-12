@@ -295,35 +295,53 @@ Behavior: Stand up → Walk forward → Slow near obstacles → Stop and turn �
 
 ---
 
-## Object Tracking System (2026-02-10)
+## Object Tracking System (2026-02-12)
+
+### Detection Modes
+
+| Mode | Model | FPS (TensorRT) | Use Case |
+|------|-------|-----------------|----------|
+| `yolo` (default) | YOLOv8n | ~63 | Fast tracking of 80 COCO classes |
+| `yolo-world` | YOLOv8s-worldv2 | ~62 (PyTorch) | Detect any object by text description |
+| `color` | HSV thresholds | ~30 | Simple color tracking |
 
 ### Quick Start
 
 ```bash
-bash ~/hexplorer/scripts/start_sensor_demo.sh                          # Full demo with tracking
-bash ~/hexplorer/scripts/start_object_tracking.sh --rviz               # Tracking + RViz
-bash ~/hexplorer/scripts/start_object_tracking.sh                      # Robot follows object
-bash ~/hexplorer/scripts/start_object_tracking.sh --smart              # Smart follower
-TARGET_COLOR=red bash ~/hexplorer/scripts/start_object_tracking.sh     # Different color
-```
+# YOLO — follow a person (default)
+bash ~/hexplorer/scripts/start_object_tracking.sh
 
-### Supported Colors
-yellow (default), red, green, blue
+# YOLO — follow a specific object
+TARGET=bottle bash ~/hexplorer/scripts/start_object_tracking.sh
+
+# YOLO-World — detect by text description
+DETECT_MODE=yolo-world TARGET="yellow ball" bash ~/hexplorer/scripts/start_object_tracking.sh
+
+# Color mode (legacy)
+DETECT_MODE=color TARGET=red bash ~/hexplorer/scripts/start_object_tracking.sh
+
+# With RViz visualization
+bash ~/hexplorer/scripts/start_object_tracking.sh --rviz
+
+# Smart follower with obstacle avoidance
+bash ~/hexplorer/scripts/start_object_tracking.sh --smart
+```
 
 ### Environment Variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `TARGET_COLOR` | yellow | Color to track |
+| `DETECT_MODE` | yolo | Detection mode: `yolo`, `yolo-world`, or `color` |
+| `TARGET` | person | What to detect (COCO class, text description, or color) |
 | `TARGET_DISTANCE` | 800 | Follow distance (mm) |
 | `MAX_SPEED` | 0.3 | Max forward speed (m/s) |
-| `TURN_SPEED` | 0.15 | Turn speed (rad/s) |
+| `TURN_SPEED` | 0.8 | Turn speed (rad/s) |
 
 ### Key Files
 
 | File | Purpose |
 |------|---------|
-| `~/hexplorer/tracking/jetson_object_tracker.py` | Runs on Jetson, color detection |
+| `~/hexplorer/tracking/jetson_object_tracker.py` | Runs on Jetson: YOLO, YOLO-World, or color detection |
 | `~/hexplorer/tracking/detection_receiver.py` | TCP client, ROS2 publisher |
 | `~/hexplorer/tracking/object_follower.py` | Robot control to follow object |
 | `~/hexplorer/tracking/smart_follower.py` | Smart follower with MOLA + obstacle avoidance |
