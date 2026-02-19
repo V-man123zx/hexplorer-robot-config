@@ -52,6 +52,21 @@ DETECT_MODE=color TARGET=red bash ~/hexplorer/scripts/start_object_tracking.sh
 bash ~/hexplorer/scripts/start_object_tracking.sh --smart
 ```
 
+### Object Search (scan-navigate cycle to find objects) — UNTESTED
+```bash
+# Search for person (default)
+bash ~/hexplorer/scripts/start_object_search.sh
+
+# Search for specific object
+TARGET=bottle bash ~/hexplorer/scripts/start_object_search.sh
+
+# YOLO-World open vocabulary
+DETECT_MODE=yolo-world TARGET="red toolbox" bash ~/hexplorer/scripts/start_object_search.sh
+
+# With RViz visualization
+bash ~/hexplorer/scripts/start_object_search.sh --rviz
+```
+
 ### MOLA LiDAR Odometry (SLAM)
 ```bash
 bash ~/hexplorer/scripts/start_mola_slam.sh
@@ -90,6 +105,7 @@ bash ~/hexplorer/scripts/start_macarena.sh
 | File | Description |
 |------|-------------|
 | `obstacle_avoidance.py` | Autonomous navigation avoiding obstacles |
+| `object_searcher.py` | Scan-navigate search for target objects (UNTESTED) |
 | `human_follower.py` | Follow a human using depth camera |
 | `frontier_explorer.py` | SLAM frontier detection |
 | `macarena_dance.py` | Macarena dance routine |
@@ -108,6 +124,7 @@ bash ~/hexplorer/scripts/start_macarena.sh
 |------|-------------|
 | `sensor_visualization.rviz` | Full sensor demo RViz config |
 | `tracking_visualization.rviz` | Tracking-only RViz config |
+| `search_visualization.rviz` | Object search RViz config (UNTESTED) |
 | `mola_slam.rviz` | MOLA SLAM RViz config |
 
 ### Scripts (`scripts/`)
@@ -118,6 +135,7 @@ bash ~/hexplorer/scripts/start_macarena.sh
 | `start_sensor_demo.sh` | Full sensor demo (camera + LiDAR + tracking) |
 | `start_object_tracking.sh` | Object tracking with optional following |
 | `start_obstacle_avoidance.sh` | Autonomous obstacle avoidance |
+| `start_object_search.sh` | Object search with MOLA + LiDAR (UNTESTED) |
 | `start_mola_slam.sh` | MOLA LiDAR odometry/SLAM |
 | `start_macarena.sh` | Macarena dance routine |
 
