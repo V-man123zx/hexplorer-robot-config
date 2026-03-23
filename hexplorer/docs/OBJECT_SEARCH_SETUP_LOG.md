@@ -1,7 +1,7 @@
 # Object Search System Setup Log
 
-**Date:** 2026-02-19
-**Status:** UNTESTED — code written but not yet run on the robot
+**Date:** 2026-02-19 (created), 2026-02-25 (tested)
+**Status:** TESTED — core functionality verified on robot
 
 ## Overview
 
@@ -180,15 +180,15 @@ SEARCH_SPEED=0.2 STOP_DISTANCE=1.0 bash ~/hexplorer/scripts/start_object_search.
 - Direction re-evaluation during navigation
 - The entire integrated system running together
 
-## Testing Checklist (NOT YET DONE)
+## Testing Checklist
 
-- [ ] Run `start_object_search.sh --rviz` with known object in direct line of sight — should find on first scan
-- [ ] RViz: verify visited grid, goal arrow, path line, scan circle all appear correctly
-- [ ] Place object around a corner — robot should scan, navigate, scan, eventually find
-- [ ] Place obstacles between robot and object — should navigate around them
-- [ ] Ctrl+C at any time — robot should sit down safely
-- [ ] Check logs for search stats (scans, area, time)
-- [ ] Test `--no-approach` flag
+- [x] Run `start_object_search.sh --rviz` with known object in direct line of sight — found on first scan (0.2s)
+- [x] RViz: verify visited grid, goal arrow, path line, scan circle all appear correctly
+- [x] Place object around a corner — robot scanned, navigated 2m, scanned again, found target (275s, 5m² covered)
+- [x] Place obstacles between robot and object — navigated around them (front cone at 0.6-0.8m)
+- [x] Ctrl+C at any time — robot sits down safely
+- [x] Check logs for search stats — "2 scans, 5.0m2 covered, 275.7s elapsed"
+- [x] Test `--no-approach` flag — confirmed immediately on detection
 - [ ] Test `--no-sit` flag
 - [ ] Test with YOLO-World mode
 - [ ] Test with color mode
@@ -196,11 +196,32 @@ SEARCH_SPEED=0.2 STOP_DISTANCE=1.0 bash ~/hexplorer/scripts/start_object_search.
 - [ ] Verify LiDAR fallback works if filterpass is unavailable
 - [ ] Long-running search (>5 minutes) — check for memory leaks in path_points or visited set
 
+## Bugs Fixed (2026-02-25)
+
+1. **Odometry topic mismatch**: `object_searcher.py` subscribed to `/state_estimator/pose` but MOLA (with `use_state_estimator:=False`) publishes on `/lidar_odometry/pose`. Fixed by adding `/lidar_odometry/pose` as primary subscription.
+
+## Test Results (2026-02-25)
+
+### Test 1: Person in direct line of sight
+- Target: person (YOLO mode)
+- Result: CONFIRMED in 0.2s, distance 1448mm
+- LiDAR: 1925 pts, front obstacle 0.87m
+- Odometry: working via `/lidar_odometry/pose`
+
+### Test 2: Person hidden, full scan-navigate cycle
+- Target: person (YOLO mode), --no-approach --rviz
+- Scan #1: 360° (6.3 rad) in 45.1s
+- Navigate: 2.0m from (-0.1, 0.0) to (-1.8, 1.1), obstacles at 0.6-0.8m
+- Scan #2: 360° (6.3 rad) in 45.5s
+- Navigate #2: continued, found person at (-2.39, 0.96)
+- Total: 2 scans, 5.0 m² covered, 275.7s
+- RViz: visited grid (11x8), goal arrow, path line, scan circle all working
+
 ## Known Concerns
 
-1. **Scan speed**: 0.15 rad/s may be too slow or too fast — needs tuning on robot
-2. **Navigate distance**: 2m between scans may need adjustment for room size
-3. **Obstacle avoidance during scanning**: Currently doesn't check for obstacles while rotating — shouldn't be an issue if scanning in place, but could be if robot drifts
-4. **VisitedAreaTracker growth**: No bounds on the visited set — fine for typical searches but could grow if robot runs for very long
-5. **Detection latency**: 3 consecutive frames at ~10-15 fps = ~0.2-0.3s confirmation delay — should be fine but verify
-6. **MOLA odometry drift**: Long searches may accumulate odometry error, making the visited grid less accurate
+1. **Scan speed**: 0.15 rad/s works well — full rotation in ~45s
+2. **Navigate distance**: 2m between scans works well for room-sized spaces
+3. **Obstacle avoidance during scanning**: Robot drifts slightly during rotation (0.3-0.4m) but doesn't collide
+4. **VisitedAreaTracker growth**: 18 cells for 5m² search — no issues at this scale
+5. **Detection latency**: 3 consecutive frames works — brief false positives (1-2 frames) correctly filtered
+6. **MOLA odometry drift**: Noticeable drift during rotation (position shifts by ~0.8m during scan) but acceptable for search

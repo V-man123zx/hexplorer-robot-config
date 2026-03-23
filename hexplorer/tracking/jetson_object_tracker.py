@@ -222,6 +222,25 @@ class ObjectTracker:
             exit(0)
 
         if self.args.mode == 'yolo-world' and model_path.endswith('.pt'):
+            # Patch CLIP download to use cached model (Jetson has no internet)
+            clip_cache = os.path.expanduser('~/.cache/clip')
+            clip_model_path = os.path.join(clip_cache, 'ViT-B-32.pt')
+            if os.path.isfile(clip_model_path):
+                try:
+                    import clip as _clip
+                    _orig_download = _clip.clip._download
+                    def _cached_download(url, root):
+                        fname = os.path.basename(url)
+                        cached = os.path.join(clip_cache, fname)
+                        if os.path.isfile(cached):
+                            print(f"  Using cached CLIP model: {cached}")
+                            return cached
+                        return _orig_download(url, root)
+                    _clip.clip._download = _cached_download
+                    print(f"  Patched CLIP to use offline cache: {clip_cache}")
+                except Exception as e:
+                    print(f"  Warning: Could not patch CLIP download: {e}")
+
             # Set text prompt classes for open-vocabulary detection
             targets = [t.strip() for t in self.args.target.split(',')]
             print(f"  Setting YOLO-World classes: {targets}")

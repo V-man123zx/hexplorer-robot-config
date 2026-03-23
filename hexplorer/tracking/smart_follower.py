@@ -254,9 +254,9 @@ class SmartFollower(Node):
             LivoxPointcloud, '/livox_Lidar_node/sn153/xyz/pointcloud',
             self.livox_callback, sensor_qos)
 
-        # Subscribe to MOLA odometry (preferred) and fallback /odom
+        # Subscribe to odometry (Fast-LIO2 via odom relay, or fallback)
         self.create_subscription(
-            Odometry, '/state_estimator/pose', self.mola_odom_callback, sensor_qos)
+            Odometry, '/lidar_odometry/pose', self.mola_odom_callback, sensor_qos)
         self.create_subscription(
             Odometry, '/odom', self.odom_callback, sensor_qos)
 

@@ -212,7 +212,7 @@ class DetectionReceiver(Node):
                     msg.encoding = 'bgr8'
                     msg.is_bigendian = False
                     msg.step = width * 3
-                    msg.data = list(data)
+                    msg.data = data
                     self.image_pub.publish(msg)
                     self._image_count += 1
 

@@ -204,7 +204,8 @@ bash ~/hexplorer/scripts/start_sensor_demo.sh
 ### Livox Mid360 LiDAR
 - **IP:** 192.168.1.153 (NOT default 192.168.1.190)
 - **Config:** `/home/robot/robot_controller_release/ros2_packages/livox_lidar_node/share/livox_lidar_node/config/lidar_parameters.json`
-- TCP bridge on port 9998: `livox_tcp_bridge.py` (Jetson) → `livox_tcp_receiver.py` (Mini PC)
+- LiDAR TCP bridge on port 9998: `livox_tcp_bridge.py` (Jetson) → `livox_tcp_receiver.py` (Mini PC)
+- IMU TCP bridge on port 9995: `imu_tcp_bridge.py` (Jetson) → `imu_tcp_receiver.py` (Mini PC)
 
 ### Camera-LiDAR TF Alignment
 - Camera quaternion: `qx=-0.5, qy=0.5, qz=-0.5, qw=0.5` (rotates optical frame to robot frame)
@@ -217,6 +218,7 @@ bash ~/hexplorer/scripts/start_sensor_demo.sh
 | `/camera/depth/image_raw` | Image | 640x480 16UC1 depth (mm) |
 | `/camera/points` | PointCloud2 | XYZRGB pointcloud |
 | `/livox/lidar` | PointCloud2 | LiDAR (~10 Hz, ~15k points) |
+| `/livox/imu` | Imu | IMU (~200 Hz, accel + gyro) |
 
 ### SSH to Jetson
 ```bash
@@ -369,51 +371,49 @@ INIT → IDLE → FOLLOWING / EVADE / BLOCKED / SEARCH
 Uses MOLA odometry to track visited areas on 0.5m grid. Navigates toward unvisited regions. No timeout - searches until target found.
 
 ### Sensor Availability During Tracking
-- LiDAR: Always available (MOLA-filtered preferred)
-- MOLA odometry: Always available
+- LiDAR: Always available
+- Fast-LIO2 odometry: Always available (LiDAR+IMU fused)
 - Depth camera: NOT available (shared with tracker)
 
 ---
 
-## MOLA LiDAR Odometry System (2026-02-10) - RECOMMENDED
+## Fast-LIO2 Odometry System (2026-03-24) - RECOMMENDED
 
-**MOLA is the recommended SLAM/odometry system.** LiDAR-only (no IMU) using GICP scan matching. The Livox Mid360 IMU has drift issues.
+**Fast-LIO2 is the recommended odometry system.** LiDAR+IMU fused via EKF. Replaces MOLA (LiDAR-only, had scan matching glitches from hexapod gait oscillation).
 
 ### Quick Start
 ```bash
-bash ~/hexplorer/scripts/start_mola_slam.sh              # Default
-bash ~/hexplorer/scripts/start_mola_slam.sh --no-gui     # No MOLA GUI
-bash ~/hexplorer/scripts/start_mola_slam.sh --no-rviz    # No RViz
+bash ~/hexplorer/scripts/start_fastlio.sh                 # Default (no RViz)
+bash ~/hexplorer/scripts/start_fastlio.sh --rviz          # With RViz
 ```
 
 ### Workspace
 ```bash
 source /opt/ros/humble/setup.bash
-source ~/MOLA-SLAM/mola_ws/install/setup.bash
+source ~/fastlio_ws/install/setup.bash
 ```
 
 ### Published Topics
 
 | Topic | Type | Description |
 |-------|------|-------------|
-| `/livox/lidar_filtered` | PointCloud2 | Filtered input to MOLA |
-| `/state_estimator/pose` | Odometry | Robot pose (USE THIS) |
-| `/lidar_odometry/localmap_points` | PointCloud2 | Accumulated map |
-| `/tf` | TF | map→odom→base_link transforms |
+| `/Odometry` | Odometry | Raw Fast-LIO2 output (camera_init→body) |
+| `/lidar_odometry/pose` | Odometry | Remapped pose (odom→base_link) — USE THIS |
+| `/cloud_registered` | PointCloud2 | Registered scan |
+| `/Laser_map` | PointCloud2 | Accumulated map |
+| `/path` | Path | Trajectory |
+| `/tf` | TF | odom→base_link (dynamic, from odom_relay) |
 
-### Map Operations
-```bash
-# Save map
-ros2 service call /map_save mola_msgs/srv/MapSave "map_path: '/home/robot/mola_maps/my_map'"
+### Config
+`~/fastlio_ws/src/FAST_LIO/config/hexplorer_mid360.yaml`
 
-# Localize in existing map
-ros2 launch mola_bringup mola_localize_launch.py
-```
+### Key Architecture
+- IMU TCP bridge runs on Jetson (port 9995), started by `jetson_services.sh`
+- `odom_relay.py` remaps Fast-LIO2 frames and broadcasts TF
+- No filterpass needed (Fast-LIO2 has built-in voxel filtering)
 
-### ICP Tuning
-Config: `~/MOLA-SLAM/mola_ws/install/mola_lidar_odometry/share/mola_lidar_odometry/pipelines/lidar3d-gicp-katana.yaml`
-
-Full tuning guide: `~/hexplorer/docs/MOLA_SLAM_TUNING.md`
+### Legacy MOLA
+Still available at `~/hexplorer/scripts/start_mola_slam_legacy.sh` as fallback.
 
 ---
 
@@ -427,7 +427,8 @@ All custom software in `~/hexplorer/`. See `~/hexplorer/README.md` for full comp
 ~/start_sensor_demo.sh -> ~/hexplorer/scripts/start_sensor_demo.sh
 ~/start_object_tracking.sh -> ~/hexplorer/scripts/start_object_tracking.sh
 ~/start_obstacle_avoidance.sh -> ~/hexplorer/scripts/start_obstacle_avoidance.sh
-~/start_mola_slam.sh -> ~/hexplorer/scripts/start_mola_slam.sh
+~/start_slam.sh -> ~/hexplorer/scripts/start_fastlio.sh
+~/start_fastlio.sh -> ~/hexplorer/scripts/start_fastlio.sh
 ```
 
 ### Quick Reference
@@ -438,6 +439,64 @@ bash ~/hexplorer/scripts/start_sensor_demo.sh --no-track   # No tracking
 bash ~/hexplorer/scripts/start_object_tracking.sh --rviz   # Tracking + RViz
 bash ~/hexplorer/scripts/start_object_tracking.sh          # Robot follows object
 bash ~/hexplorer/scripts/start_object_tracking.sh --smart  # Smart follower
-bash ~/hexplorer/scripts/start_mola_slam.sh                # MOLA SLAM
+bash ~/hexplorer/scripts/start_object_search.sh            # Object search (UNTESTED)
+bash ~/hexplorer/scripts/start_fastlio.sh                  # Fast-LIO2 odometry
 bash ~/hexplorer/scripts/start_obstacle_avoidance.sh       # Obstacle avoidance
 ```
+
+---
+
+## Object Search System (2026-02-19) — Updated 2026-03-24
+
+Standalone scan-navigate search program. Uses Fast-LIO2 for odometry (replaced MOLA). Built on proven patterns from `obstacle_avoidance.py` and `object_follower.py`.
+
+### Quick Start
+```bash
+bash ~/hexplorer/scripts/start_object_search.sh                                    # Search for person
+TARGET=bottle bash ~/hexplorer/scripts/start_object_search.sh                      # Search for bottle
+DETECT_MODE=yolo-world TARGET="red toolbox" bash ~/hexplorer/scripts/start_object_search.sh
+bash ~/hexplorer/scripts/start_object_search.sh --rviz                             # With RViz
+bash ~/hexplorer/scripts/start_object_search.sh --no-approach                      # Confirm without approaching
+```
+
+### State Machine
+```
+STANDUP -> SCANNING (360 rotate) -> NAVIGATING (toward unvisited) -> SCANNING -> ...
+               |                          |
+             FOUND                      FOUND
+               |
+           APPROACH -> CONFIRMED -> SHUTDOWN
+```
+
+### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DETECT_MODE` | yolo | Detection mode: yolo, yolo-world, color |
+| `TARGET` | person | What to search for |
+| `SEARCH_SPEED` | 0.15 | Navigation speed (m/s) |
+| `SCAN_SPEED` | 0.15 | Scan rotation speed (rad/s) |
+| `NAVIGATE_DISTANCE` | 2.0 | Meters between scans |
+| `STOP_DISTANCE` | 0.8 | Obstacle stop distance (m) |
+| `CONFIRM_DISTANCE` | 1500 | Approach distance (mm) |
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `~/hexplorer/navigation/object_searcher.py` | Standalone search node (all code in one file) |
+| `~/hexplorer/scripts/start_object_search.sh` | Launch script (MOLA + tracking infra) |
+| `~/hexplorer/config/search_visualization.rviz` | RViz config |
+
+### RViz Topics
+
+| Topic | Type | Description |
+|-------|------|-------------|
+| `/object_searcher/visited_grid` | OccupancyGrid | Visited=white, unvisited=grey |
+| `/object_searcher/goal_marker` | Marker (Arrow) | Navigate direction |
+| `/object_searcher/path_marker` | Marker (LINE_STRIP) | Search path traveled |
+| `/object_searcher/scan_marker` | Marker (CYLINDER) | Current scan location |
+| `/object_searcher/state` | String (JSON) | State for monitoring |
+
+### Testing Status
+Core search logic tested on 2026-02-25. Updated 2026-03-24 to use Fast-LIO2 (LiDAR+IMU) instead of MOLA. **Needs re-testing** with Fast-LIO2 odometry.

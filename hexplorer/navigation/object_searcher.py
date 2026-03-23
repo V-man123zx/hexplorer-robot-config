@@ -159,7 +159,9 @@ class ObjectSearcher(Node):
         self.create_subscription(
             PointCloud2, '/livox/lidar', self._lidar_callback, sensor_qos)
 
-        # Odometry - primary: MOLA, fallback: /odom
+        # Odometry - primary: MOLA lidar odometry, fallbacks
+        self.create_subscription(
+            Odometry, '/lidar_odometry/pose', self._odom_callback, sensor_qos)
         self.create_subscription(
             Odometry, '/state_estimator/pose', self._odom_callback, sensor_qos)
         self.create_subscription(
@@ -200,6 +202,8 @@ class ObjectSearcher(Node):
         self.scan_prev_yaw = None
         self.scan_start_time = 0
         self.scan_timeout = 60.0  # Max seconds for one scan
+        self.scan_start_x = 0.0   # Position at scan start (LiDAR offset causes
+        self.scan_start_y = 0.0   # circular drift during in-place rotation)
 
         # Navigating state
         self.nav_start_x = 0.0
@@ -424,6 +428,8 @@ class ObjectSearcher(Node):
         self.scan_yaw_accumulated = 0.0
         self.scan_prev_yaw = self.robot_yaw if self.odom_received else None
         self.scan_start_time = time.time()
+        self.scan_start_x = self.robot_x
+        self.scan_start_y = self.robot_y
         self.scan_count += 1
         self.get_logger().info(
             f'SCANNING #{self.scan_count} at ({self.robot_x:.1f}, {self.robot_y:.1f})')
@@ -463,8 +469,9 @@ class ObjectSearcher(Node):
     def _enter_navigating(self):
         """Begin navigating toward unvisited area."""
         self.state = STATE_NAVIGATING
-        self.nav_start_x = self.robot_x
-        self.nav_start_y = self.robot_y
+        # Use scan-start position as nav origin (avoids LiDAR offset drift)
+        self.nav_start_x = self.scan_start_x
+        self.nav_start_y = self.scan_start_y
         self.nav_last_eval_time = time.time()
 
         # Pick best direction
@@ -819,9 +826,12 @@ class ObjectSearcher(Node):
         """Publish all visualization markers at ~1 Hz."""
         now = time.time()
 
-        # Update path points at ~1 Hz
+        # Update path points at ~1 Hz (use scan-start pos during scanning)
         if now - self.last_path_time > 1.0 and self.odom_received:
-            self.path_points.append((self.robot_x, self.robot_y))
+            if self.state == STATE_SCANNING:
+                self.path_points.append((self.scan_start_x, self.scan_start_y))
+            else:
+                self.path_points.append((self.robot_x, self.robot_y))
             # Limit path to 1000 points
             if len(self.path_points) > 1000:
                 self.path_points = self.path_points[-1000:]
@@ -849,7 +859,25 @@ class ObjectSearcher(Node):
         vel = Twist()
         cmd.target_state = 4  # WALK mode
 
-        # Wait for odometry before starting
+        # Wait for LiDAR data before doing anything (REQUIRED for safe operation)
+        self.get_logger().info('Waiting for LiDAR data...')
+        wait_start = time.time()
+        while self.last_lidar_time == 0 and self.running:
+            rclpy.spin_once(self, timeout_sec=0.1)
+            elapsed = time.time() - wait_start
+            if elapsed > 60:
+                self.get_logger().error('No LiDAR data after 60s - aborting for safety')
+                self.sit_down()
+                return
+            if int(elapsed) % 10 == 0 and int(elapsed) > 0:
+                self.get_logger().info(f'  Still waiting for LiDAR... ({int(elapsed)}s)')
+
+        if not self.running:
+            return
+
+        self.get_logger().info('LiDAR data received!')
+
+        # Wait for odometry (helpful but not strictly required)
         self.get_logger().info('Waiting for odometry...')
         wait_start = time.time()
         while not self.odom_received and self.running:
@@ -875,14 +903,35 @@ class ObjectSearcher(Node):
                 vel.angular.z = 0.0
 
                 # Mark current position as visited
+                # During scanning, use scan-start pos (LiDAR offset causes circular drift)
                 if self.odom_received:
-                    self.visited_tracker.mark_visited(self.robot_x, self.robot_y)
+                    if self.state == STATE_SCANNING:
+                        self.visited_tracker.mark_visited(
+                            self.scan_start_x, self.scan_start_y)
+                    else:
+                        self.visited_tracker.mark_visited(self.robot_x, self.robot_y)
 
                 # Check for target in any state (except CONFIRMED/SHUTDOWN)
                 if self.state not in (STATE_CONFIRMED, STATE_SHUTDOWN, STATE_FOUND,
                                       STATE_APPROACH):
                     if self._check_for_target():
                         self._enter_found()
+
+                # Safety: check LiDAR freshness during navigation/approach
+                lidar_stale = (time.time() - self.last_lidar_time) > 3.0
+                if lidar_stale and self.state in (STATE_NAVIGATING, STATE_APPROACH):
+                    vel.linear.x = 0.0
+                    vel.angular.z = 0.0
+                    self.cmd_pub.publish(cmd)
+                    self.vel_pub.publish(vel)
+                    if log_counter % 25 == 0:
+                        self.get_logger().warn(
+                            f'LiDAR data stale ({time.time() - self.last_lidar_time:.0f}s) '
+                            f'- stopping movement')
+                    rclpy.spin_once(self, timeout_sec=0.01)
+                    time.sleep(0.04)
+                    log_counter += 1
+                    continue
 
                 # State machine
                 if self.state == STATE_SCANNING:
@@ -919,7 +968,12 @@ class ObjectSearcher(Node):
                 # Log periodically
                 log_counter += 1
                 if log_counter % 25 == 0:  # Every ~1 second
-                    status = (f'{self.state} | pos=({self.robot_x:.1f},{self.robot_y:.1f}) '
+                    # During scanning show scan-start pos (raw odom drifts in circle)
+                    if self.state == STATE_SCANNING:
+                        px, py = self.scan_start_x, self.scan_start_y
+                    else:
+                        px, py = self.robot_x, self.robot_y
+                    status = (f'{self.state} | pos=({px:.1f},{py:.1f}) '
                               f'front={self.front_min_distance:.1f}m '
                               f'det={self.consecutive_detections}')
                     if self.state == STATE_SCANNING:

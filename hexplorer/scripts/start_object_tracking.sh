@@ -56,7 +56,7 @@ elif [ "$TEST_MODE" = true ]; then
     echo "  MODE: TEST (terminal visualization)"
 elif [ "$SMART_MODE" = true ]; then
     echo "  MODE: SMART (obstacle avoidance + visited-area search)"
-    echo "  MOLA Odometry: Enabled (for position tracking)"
+    echo "  Fast-LIO2 Odometry: Enabled (LiDAR+IMU fusion)"
 else
     echo "  MODE: FULL (robot will follow object)"
 fi
@@ -110,8 +110,8 @@ cleanup() {
     echo ""
     echo "Cleaning up..."
     for pid in "${PIDS[@]}"; do kill -9 "$pid" 2>/dev/null || true; done
-    pkill -9 -f "mola-cli" 2>/dev/null || true
-    pkill -9 -f "filterpass" 2>/dev/null || true
+    pkill -9 -f "fastlio_mapping" 2>/dev/null || true
+    pkill -9 -f "odom_relay" 2>/dev/null || true
     # Kill camera processes on Jetson, leave LiDAR running
     jetson_kill_camera
     echo "Cleanup complete"
@@ -134,9 +134,9 @@ sshpass -p "$JETSON_PASS" scp -o StrictHostKeyChecking=no \
     "$HEXPLORER_DIR/tracking/jetson_object_tracker.py" \
     "$JETSON_USER@$JETSON_IP:/home/robot/jetson_object_tracker.py" 2>/dev/null
 
-# Start LiDAR if smart mode
+# Start LiDAR + odometry if smart mode
 if [ "$SMART_MODE" = true ]; then
-    source ~/MOLA-SLAM/mola_ws/install/setup.bash 2>/dev/null || true
+    source ~/fastlio_ws/install/setup.bash 2>/dev/null || true
 
     echo "[3/11] Ensuring Jetson LiDAR services..."
     ensure_jetson_lidar
@@ -145,26 +145,19 @@ if [ "$SMART_MODE" = true ]; then
     ensure_local "livox_tcp_receiver" "python3 $HEXPLORER_DIR/bridges/livox_tcp_receiver.py"
     sleep 2
 
-    echo "[5/11] Starting TF publishers..."
-    ros2 run tf2_ros static_transform_publisher --x 0 --y 0 --z 0 --qx 0 --qy 0 --qz 0 --qw 1 --frame-id odom --child-frame-id base_link &
-    PIDS+=($!)
-    sleep 0.3
-    ros2 run tf2_ros static_transform_publisher --x 0 --y 0 --z 0.2 --qx 0 --qy 0 --qz 0 --qw 1 --frame-id base_link --child-frame-id livox_frame &
-    PIDS+=($!)
-    sleep 0.3
-
-    echo "[6/11] Starting filterpass node..."
-    ensure_local "filterpass" "python3 ~/MOLA-SLAM/mola_ws/install/mola_bringup/lib/mola_bringup/filterpass.py"
+    echo "[5/11] Starting IMU TCP receiver..."
+    ensure_local "imu_tcp_receiver" "python3 $HEXPLORER_DIR/bridges/imu_tcp_receiver.py"
     sleep 2
 
-    echo "[7/11] Starting MOLA LiDAR Odometry..."
-    ros2 launch mola_lidar_odometry ros2-lidar-odometry-katana.launch.py \
-        lidar_topic_name:=/livox/lidar_filtered \
-        ignore_lidar_pose_from_tf:=true \
-        use_rviz:=false \
-        use_mola_gui:=False \
-        use_state_estimator:=False \
-        mola_lo_pipeline:=../pipelines/lidar3d-katana.yaml &
+    echo "[6/11] Starting TF publisher..."
+    ros2 run tf2_ros static_transform_publisher --x 0.3 --y 0 --z 0.2 --qx 0 --qy 0 --qz 0 --qw 1 --frame-id base_link --child-frame-id livox_frame &
+    PIDS+=($!)
+    sleep 0.3
+
+    echo "[7/11] Starting Fast-LIO2 + odom relay..."
+    python3 "$HEXPLORER_DIR/bridges/odom_relay.py" &
+    PIDS+=($!)
+    ros2 launch fast_lio mapping.launch.py config_file:=hexplorer_mid360.yaml rviz:=false &
     PIDS+=($!)
     sleep 3
 

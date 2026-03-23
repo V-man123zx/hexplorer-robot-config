@@ -26,6 +26,7 @@ class ImuTcpReceiver(Node):
 
         # Publisher
         self.pub = self.create_publisher(Imu, self.output_topic, 10)
+        self.msg_count = 0
 
         # TCP client thread
         self.connected = False

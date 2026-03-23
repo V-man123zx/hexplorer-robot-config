@@ -6,6 +6,7 @@ TCP bridge for Livox LiDAR - runs on Jetson, sends pointcloud to Mini PC.
 import socket
 import struct
 import threading
+import numpy as np
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
@@ -61,12 +62,18 @@ class LivoxTCPBridge(Node):
                     self.get_logger().info(f'Received {self.frame_count} frames, no clients')
                 return
 
-            # Convert to XYZI format (x, y, z, intensity as floats)
-            points_data = []
-            for pt in msg.points:
-                points_data.append(struct.pack('ffff', pt.x, pt.y, pt.z, float(pt.reflectivity)))
-
-            data = b''.join(points_data)
+            # Fast XYZI serialization via pre-allocated numpy array
+            pts = msg.points
+            n = len(pts)
+            buf = np.empty(n * 4, dtype=np.float32)
+            for i in range(n):
+                pt = pts[i]
+                j = i * 4
+                buf[j] = pt.x
+                buf[j+1] = pt.y
+                buf[j+2] = pt.z
+                buf[j+3] = pt.reflectivity
+            data = buf.tobytes()
 
             # Header: stamp_sec(4), stamp_nsec(4), num_points(4), data_len(4)
             header = struct.pack('!IIII',

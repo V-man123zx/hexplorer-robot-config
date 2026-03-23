@@ -75,7 +75,7 @@ Visualization Manager:
       Name: MOLA Odometry
       Enabled: true
       Topic:
-        Value: /state_estimator/pose
+        Value: /lidar_odometry/pose
         Depth: 5
         History Policy: Keep Last
         Reliability Policy: Best Effort
@@ -93,10 +93,10 @@ Visualization Manager:
         Shaft Length: 0.2
         Shaft Radius: 0.03
     - Class: rviz_default_plugins/Image
-      Name: Camera Raw
+      Name: Detection View
       Enabled: true
       Topic:
-        Value: /camera/color/image_raw
+        Value: /object_tracking/image
         Depth: 5
         Durability Policy: Volatile
         Reliability Policy: Best Effort
