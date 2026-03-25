@@ -447,22 +447,37 @@ class AgentSession:
         self._log("USER ", transcript)
         self.last_activity = time.time()
 
-    def _handle_tool_call(self, tool_name, parameters):
-        """Handle client tool call from agent. Returns result string."""
-        self._log("TOOL ", f"{tool_name}({parameters})")
+    def _handle_tool_call(self, parameters):
+        """Handle client tool call from agent. Receives parameters dict, returns result string.
 
-        if tool_name == "execute_robot_action":
-            action = parameters.get("action", "unknown")
-            target = parameters.get("target", None)
-            detect_mode = parameters.get("detect_mode", "yolo-world")
-            use_smart = parameters.get("use_smart", False)
+        Runs the action in a background thread so the tool returns immediately
+        (robot actions like stand-up take 6+ seconds, which would timeout the agent).
+        """
+        self._log("TOOL ", f"execute_robot_action({parameters})")
 
+        action = parameters.get("action", "unknown")
+        target = parameters.get("target", None)
+        detect_mode = parameters.get("detect_mode", "yolo-world")
+        use_smart = parameters.get("use_smart", False)
+
+        # Run action in background thread so we return fast
+        def _run():
             result = self.behavior.execute_action(action, target, detect_mode, use_smart)
             self._log("RESULT", result)
-            return result
-        else:
-            self._log("ERROR", f"Unknown tool: {tool_name}")
-            return f"Unknown tool: {tool_name}"
+
+        threading.Thread(target=_run, daemon=True).start()
+
+        # Return immediately with confirmation
+        confirmations = {
+            "follow": f"Following {target or 'object'}",
+            "search": f"Searching for {target or 'object'}",
+            "dance": "Starting the Macarena",
+            "stand": "Standing up now",
+            "sit": "Sitting down now",
+            "come_here": "Coming toward you",
+            "stop": "Stopping",
+        }
+        return confirmations.get(action, f"Executing {action}")
 
     def start(self):
         """Start the agent conversation session."""
@@ -509,16 +524,25 @@ class AgentSession:
             pass
 
     def end(self):
-        """End the agent session."""
+        """End the agent session. Ensures cloud WebSocket is closed."""
         self.session_active = False
         if self.conversation:
             try:
+                self._log("SYS  ", "Ending agent session...")
                 self.conversation.end_session()
-                self.conversation.wait_for_session_end()
+                # wait_for_session_end joins the thread — use a timeout
+                # to avoid blocking forever
+                if self.conversation._thread and self.conversation._thread.is_alive():
+                    self.conversation._thread.join(timeout=5)
+                    if self.conversation._thread.is_alive():
+                        self._log("SYS  ", "Session thread didn't stop in 5s, forcing...")
             except Exception as e:
                 print(f"  Session end error: {e}")
             self.conversation = None
-        print("Agent session ended.")
+        if self.log_file:
+            self.log_file.close()
+            self.log_file = None
+        print("Agent session ended.", flush=True)
 
 
 # ─── Main ────────────────────────────────────────────────────────────────────
@@ -558,12 +582,34 @@ def main():
     behavior = BehaviorManager(debug=args.debug)
     listener = WakeWordListener()
 
-    # Signal handler for clean shutdown
+    # Track active session for cleanup
+    active_session = None
     running = True
+
+    def cleanup_and_exit():
+        """Ensure cloud session and robot are shut down."""
+        nonlocal active_session
+        if active_session:
+            print("Ending cloud agent session...")
+            try:
+                active_session.end()
+            except Exception as e:
+                print(f"  Session cleanup error: {e}")
+            active_session = None
+        print("Shutting down robot...")
+        behavior.shutdown()
+        print("Done.")
+
+    # Register atexit so cleanup runs even on unexpected exit
+    import atexit
+    atexit.register(cleanup_and_exit)
+
     def handle_signal(signum, frame):
         nonlocal running
         running = False
-        print("\nShutting down...")
+        print(f"\nSignal {signum} received, shutting down...")
+        cleanup_and_exit()
+        sys.exit(0)
 
     signal.signal(signal.SIGINT, handle_signal)
     signal.signal(signal.SIGTERM, handle_signal)
@@ -577,17 +623,18 @@ def main():
                 break
 
             # Start agent session
-            session = AgentSession(behavior, agent_id, api_key)
-            session.start()
+            active_session = AgentSession(behavior, agent_id, api_key)
+            active_session.start()
 
             # Pause wake word listener during agent session (agent has its own mic)
             listener.pause()
 
             # Wait for session to end
-            session.wait_for_end(idle_timeout=60)
+            active_session.wait_for_end(idle_timeout=60)
 
-            # End session
-            session.end()
+            # End session cleanly
+            active_session.end()
+            active_session = None
             listener.resume()
 
             print("\nSession ended. Listening for wake word again...")
@@ -598,9 +645,7 @@ def main():
         import traceback
         traceback.print_exc()
     finally:
-        print("Shutting down robot...")
-        behavior.shutdown()
-        print("Done.")
+        cleanup_and_exit()
 
 
 if __name__ == "__main__":
