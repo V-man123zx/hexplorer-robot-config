@@ -445,25 +445,30 @@ class AgentSession:
 
     def start(self):
         """Start the agent conversation session."""
-        from elevenlabs.conversational_ai.conversation import Conversation
+        from elevenlabs import ElevenLabs
+        from elevenlabs.conversational_ai.conversation import Conversation, ClientTools
         from elevenlabs.conversational_ai.default_audio_interface import DefaultAudioInterface
 
         self.session_active = True
         self.last_activity = time.time()
 
-        self.conversation = Conversation(
-            agent_id=self.agent_id,
-            api_key=self.api_key,
-            requires_auth=False,
-            audio_interface=DefaultAudioInterface(),
-            callback_agent_response=lambda response: self._handle_agent_response(response),
-            callback_user_transcript=lambda transcript: self._handle_user_transcript(transcript),
-        )
+        # Create client and client tools
+        client = ElevenLabs(api_key=self.api_key)
 
-        # Register the robot action tool
-        self.conversation.client_tools.register(
+        client_tools = ClientTools()
+        client_tools.register(
             "execute_robot_action",
             self._handle_tool_call
+        )
+
+        self.conversation = Conversation(
+            client=client,
+            agent_id=self.agent_id,
+            requires_auth=False,
+            audio_interface=DefaultAudioInterface(),
+            client_tools=client_tools,
+            callback_agent_response=lambda response: self._handle_agent_response(response),
+            callback_user_transcript=lambda transcript: self._handle_user_transcript(transcript),
         )
 
         print("Starting agent session...")
