@@ -410,27 +410,46 @@ class BehaviorManager:
 class AgentSession:
     """Manages an ElevenLabs Conversational AI Agent session."""
 
-    def __init__(self, behavior_manager, agent_id, api_key):
+    def __init__(self, behavior_manager, agent_id, api_key, log_dir=None):
         self.behavior = behavior_manager
         self.agent_id = agent_id
         self.api_key = api_key
         self.conversation = None
         self.last_activity = time.time()
         self.session_active = False
+        self.log_file = None
+
+        # Open conversation log file
+        if log_dir is None:
+            log_dir = os.path.join(HEXPLORER_DIR, "logs", "voice_sessions")
+        os.makedirs(log_dir, exist_ok=True)
+        ts = time.strftime("%Y%m%d_%H%M%S")
+        log_path = os.path.join(log_dir, f"session_{ts}.log")
+        self.log_file = open(log_path, "w")
+        self._log("SYS  ", f"Session log: {log_path}")
+
+    def _log(self, tag, msg):
+        """Print timestamped log line and write to log file."""
+        ts = time.strftime("%H:%M:%S")
+        line = f"[{ts}] [{tag}] {msg}"
+        print(line, flush=True)
+        if self.log_file:
+            self.log_file.write(line + "\n")
+            self.log_file.flush()
 
     def _handle_agent_response(self, response):
         """Callback when agent speaks."""
-        print(f"  Agent: {response}")
+        self._log("AGENT", response)
         self.last_activity = time.time()
 
     def _handle_user_transcript(self, transcript):
         """Callback when user speech is transcribed."""
-        print(f"  User: {transcript}")
+        self._log("USER ", transcript)
         self.last_activity = time.time()
 
     def _handle_tool_call(self, tool_name, parameters):
         """Handle client tool call from agent. Returns result string."""
-        print(f"  Tool call: {tool_name}({parameters})")
+        self._log("TOOL ", f"{tool_name}({parameters})")
 
         if tool_name == "execute_robot_action":
             action = parameters.get("action", "unknown")
@@ -439,8 +458,10 @@ class AgentSession:
             use_smart = parameters.get("use_smart", False)
 
             result = self.behavior.execute_action(action, target, detect_mode, use_smart)
+            self._log("RESULT", result)
             return result
         else:
+            self._log("ERROR", f"Unknown tool: {tool_name}")
             return f"Unknown tool: {tool_name}"
 
     def start(self):
@@ -471,8 +492,9 @@ class AgentSession:
             callback_user_transcript=lambda transcript: self._handle_user_transcript(transcript),
         )
 
-        print("Starting agent session...")
+        self._log("SYS  ", "Starting agent session...")
         self.conversation.start_session()
+        self._log("SYS  ", "Agent session started — listening for commands")
 
     def wait_for_end(self, idle_timeout=60):
         """Wait for session to end (idle timeout or explicit end)."""

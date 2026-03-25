@@ -57,6 +57,11 @@ if [ ! -f "$HEXPLORER_DIR/voice/.env" ]; then
     exit 1
 fi
 
+# Redirect sensor noise to log file so terminal stays clean for conversation
+SENSOR_LOG="/tmp/voice_demo_sensors.log"
+echo "  Sensor logs: $SENSOR_LOG"
+echo ""
+
 declare -a PIDS=()
 
 cleanup() {
@@ -91,38 +96,38 @@ echo "[3/8] Ensuring Jetson LiDAR services..."
 ensure_jetson_lidar
 
 echo "[4/8] Starting local LiDAR receiver..."
-ensure_local "livox_tcp_receiver" "python3 $HEXPLORER_DIR/bridges/livox_tcp_receiver.py"
+ensure_local "livox_tcp_receiver" "python3 $HEXPLORER_DIR/bridges/livox_tcp_receiver.py >>$SENSOR_LOG 2>&1"
 sleep 2
 
 echo "[5/8] Starting IMU TCP receiver..."
-ensure_local "imu_tcp_receiver" "python3 $HEXPLORER_DIR/bridges/imu_tcp_receiver.py"
+ensure_local "imu_tcp_receiver" "python3 $HEXPLORER_DIR/bridges/imu_tcp_receiver.py >>$SENSOR_LOG 2>&1"
 sleep 2
 
 echo "[6/8] Starting TF publisher..."
-ros2 run tf2_ros static_transform_publisher --x 0.3 --y 0 --z 0.2 --qx 0 --qy 0 --qz 0 --qw 1 --frame-id base_link --child-frame-id livox_frame &
+ros2 run tf2_ros static_transform_publisher --x 0.3 --y 0 --z 0.2 --qx 0 --qy 0 --qz 0 --qw 1 --frame-id base_link --child-frame-id livox_frame >>$SENSOR_LOG 2>&1 &
 PIDS+=($!)
 sleep 0.3
 
 echo "[7/8] Starting Fast-LIO2 + odom relay..."
-python3 "$HEXPLORER_DIR/bridges/odom_relay.py" &
+python3 "$HEXPLORER_DIR/bridges/odom_relay.py" >>$SENSOR_LOG 2>&1 &
 PIDS+=($!)
-ros2 launch fast_lio mapping.launch.py config_file:=hexplorer_mid360.yaml rviz:=false &
+ros2 launch fast_lio mapping.launch.py config_file:=hexplorer_mid360.yaml rviz:=false >>$SENSOR_LOG 2>&1 &
 PIDS+=($!)
 sleep 3
 
 echo "[8/8] Starting detection receiver..."
-ensure_local "detection_receiver" "python3 $HEXPLORER_DIR/tracking/detection_receiver.py --with-images"
+ensure_local "detection_receiver" "python3 $HEXPLORER_DIR/tracking/detection_receiver.py --with-images >>$SENSOR_LOG 2>&1"
 sleep 2
 
 # ─── Optional RViz ───────────────────────────────────────────────────────────
 
 if [ "$RVIZ_MODE" = true ]; then
     echo "Starting RViz..."
-    ros2 run tf2_ros static_transform_publisher --x 0 --y 0 --z 0 --qx 0 --qy 0 --qz 0 --qw 1 --frame-id map --child-frame-id camera_color_optical_frame &
+    ros2 run tf2_ros static_transform_publisher --x 0 --y 0 --z 0 --qx 0 --qy 0 --qz 0 --qw 1 --frame-id map --child-frame-id camera_color_optical_frame >>$SENSOR_LOG 2>&1 &
     PIDS+=($!)
-    python3 "$HEXPLORER_DIR/tracking/tracking_rviz_visualizer.py" &
+    python3 "$HEXPLORER_DIR/tracking/tracking_rviz_visualizer.py" >>$SENSOR_LOG 2>&1 &
     PIDS+=($!)
-    rviz2 -d "$HEXPLORER_DIR/config/tracking_visualization.rviz" &
+    rviz2 -d "$HEXPLORER_DIR/config/tracking_visualization.rviz" >>$SENSOR_LOG 2>&1 &
     PIDS+=($!)
     sleep 2
 fi
@@ -139,4 +144,6 @@ echo ""
 
 # Note: voice_demo.py manages Jetson tracker lifecycle itself
 # (starts/restarts tracker when target changes via voice command)
-python3 "$HEXPLORER_DIR/voice/voice_demo.py" $DEBUG_FLAG
+# Suppress ALSA warnings that pollute terminal
+export PYTHONUNBUFFERED=1
+python3 "$HEXPLORER_DIR/voice/voice_demo.py" $DEBUG_FLAG 2> >(grep -v "^ALSA lib" >&2)
