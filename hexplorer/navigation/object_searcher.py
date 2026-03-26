@@ -105,26 +105,23 @@ class VisitedAreaTracker:
                          half_angle=math.radians(15), min_dist=0.9, max_dist=3.0):
         """Mark cells visible in a forward-facing camera cone.
 
-        Args:
-            half_angle: Half-width of cone (15 deg = 30 deg total FOV)
-            min_dist: Near edge of cone (~3 ft)
-            max_dist: Far edge of cone (~10 ft)
+        Casts rays across the cone. Each ray stops at blocked (wall) cells
+        so areas behind walls don't get marked as visited.
         """
-        step = self.cell_size * 0.5
-        for d_idx in range(int(min_dist / step), int(max_dist / step) + 1):
-            d = d_idx * step
-            # Sweep across the cone width at this distance
-            arc_step = self.cell_size / max(d, 0.5)
-            angle = -half_angle
-            while angle <= half_angle:
-                px = robot_x + d * math.cos(robot_yaw + angle)
-                py = robot_y + d * math.sin(robot_yaw + angle)
+        step = self.cell_size
+        # Cast rays across the cone width
+        num_rays = max(8, int(2 * half_angle / (self.cell_size / max_dist)))
+        for r in range(num_rays + 1):
+            angle = robot_yaw - half_angle + (2 * half_angle * r / num_rays)
+            for d_idx in range(int(min_dist / step), int(max_dist / step) + 1):
+                d = d_idx * step
+                px = robot_x + d * math.cos(angle)
+                py = robot_y + d * math.sin(angle)
                 cell = (int(math.floor(px / self.cell_size)),
                         int(math.floor(py / self.cell_size)))
-                # Don't mark blocked cells as visited (wall is still there)
-                if cell not in self.blocked:
-                    self.visited.add(cell)
-                angle += arc_step
+                if cell in self.blocked:
+                    break  # Wall blocks visibility — stop this ray
+                self.visited.add(cell)
 
     def get_best_direction(self, robot_x, robot_y, robot_yaw, num_dirs=16,
                            exclude_angle=None, exclude_width=math.radians(45)):
