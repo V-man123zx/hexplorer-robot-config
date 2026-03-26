@@ -118,7 +118,9 @@ class VisitedAreaTracker:
     def get_best_direction(self, robot_x, robot_y, robot_yaw, num_dirs=16):
         """Check num_dirs directions, return angle with most reachable unvisited cells.
 
-        Rays terminate when they hit a blocked (wall) cell.
+        Blocked cells are penalized but don't immediately terminate the ray — only
+        3+ consecutive blocked cells (a real wall) stop the ray. Stray blocked cells
+        just reduce the score.
         If ALL directions are fully visited/blocked, falls back to the direction
         with the longest clear distance (most room to move).
         """
@@ -127,6 +129,7 @@ class VisitedAreaTracker:
         ray_length = 6.0
         step = 0.25
         total_all = 0
+        wall_thickness = 3  # Consecutive blocked cells needed to stop a ray
 
         # Also track clear distance per direction as fallback
         best_clear_dist = 0.0
@@ -136,6 +139,8 @@ class VisitedAreaTracker:
             angle = robot_yaw + (2 * math.pi * i / num_dirs)
             unvisited = 0
             clear_dist = 0.0
+            consecutive_blocked = 0
+            hit_wall = False
             for d_idx in range(1, int(ray_length / step) + 1):
                 d = d_idx * step
                 px = robot_x + d * math.cos(angle)
@@ -143,11 +148,16 @@ class VisitedAreaTracker:
                 gx = int(math.floor(px / self.cell_size))
                 gy = int(math.floor(py / self.cell_size))
                 if (gx, gy) in self.blocked:
-                    break
-                clear_dist = d
-                total_all += 1
-                if (gx, gy) not in self.visited:
-                    unvisited += 1
+                    consecutive_blocked += 1
+                    if consecutive_blocked >= wall_thickness:
+                        hit_wall = True
+                        break
+                else:
+                    consecutive_blocked = 0
+                    clear_dist = d
+                    total_all += 1
+                    if (gx, gy) not in self.visited:
+                        unvisited += 1
 
             if unvisited > best_score:
                 best_score = unvisited
