@@ -3,8 +3,8 @@
 Object Searcher for Hexplorer Robot
 
 Systematically searches for a target object by scanning in place, then navigating
-to unvisited areas. Uses MOLA odometry for position tracking and LiDAR for obstacle
-avoidance (proven front-cone approach from obstacle_avoidance.py).
+to unvisited areas. Uses Fast-LIO2 odometry for position tracking and LiDAR for
+obstacle avoidance (proven front-cone approach from obstacle_avoidance.py).
 
 State machine:
     STANDUP -> SCANNING -> NAVIGATING -> SCANNING -> ... (cycle)
@@ -14,14 +14,14 @@ State machine:
               APPROACH -> CONFIRMED -> SHUTDOWN
 
 Requires:
-    - MOLA LiDAR Odometry running (for /state_estimator/pose)
+    - Fast-LIO2 + odom_relay running (for /lidar_odometry/pose)
     - Detection receiver running (for /object_detection)
-    - LiDAR data on /livox/lidar_filtered or /livox/lidar
+    - LiDAR data on /livox/lidar
 
 Usage:
     source /opt/ros/humble/setup.bash
     source /home/robot/robot_controller_release/ros2_packages/setup.bash
-    source ~/MOLA-SLAM/mola_ws/install/setup.bash
+    source ~/fastlio_ws/install/setup.bash
     python3 object_searcher.py [options]
 """
 
@@ -77,6 +77,28 @@ class VisitedAreaTracker:
     def mark_visited(self, x, y):
         self.visited.add((int(math.floor(x / self.cell_size)),
                           int(math.floor(y / self.cell_size))))
+
+    def mark_camera_cone(self, robot_x, robot_y, robot_yaw,
+                         half_angle=math.radians(15), min_dist=0.9, max_dist=3.0):
+        """Mark cells visible in a forward-facing camera cone.
+
+        Args:
+            half_angle: Half-width of cone (15 deg = 30 deg total FOV)
+            min_dist: Near edge of cone (~3 ft)
+            max_dist: Far edge of cone (~10 ft)
+        """
+        step = self.cell_size * 0.5
+        for d_idx in range(int(min_dist / step), int(max_dist / step) + 1):
+            d = d_idx * step
+            # Sweep across the cone width at this distance
+            arc_step = self.cell_size / max(d, 0.5)
+            angle = -half_angle
+            while angle <= half_angle:
+                px = robot_x + d * math.cos(robot_yaw + angle)
+                py = robot_y + d * math.sin(robot_yaw + angle)
+                self.visited.add((int(math.floor(px / self.cell_size)),
+                                  int(math.floor(py / self.cell_size))))
+                angle += arc_step
 
     def get_best_direction(self, robot_x, robot_y, robot_yaw, num_dirs=8):
         """Check num_dirs directions, return angle with fewest visited cells along 3m ray."""
@@ -153,19 +175,13 @@ class ObjectSearcher(Node):
         self.create_subscription(
             String, '/object_detection', self._detection_callback, 10)
 
-        # LiDAR - primary: filtered from MOLA pipeline, fallback: raw
-        self.create_subscription(
-            PointCloud2, '/livox/lidar_filtered', self._lidar_callback, sensor_qos)
+        # LiDAR pointcloud (from TCP bridge)
         self.create_subscription(
             PointCloud2, '/livox/lidar', self._lidar_callback, sensor_qos)
 
-        # Odometry - primary: MOLA lidar odometry, fallbacks
+        # Odometry - Fast-LIO2 via odom_relay
         self.create_subscription(
             Odometry, '/lidar_odometry/pose', self._odom_callback, sensor_qos)
-        self.create_subscription(
-            Odometry, '/state_estimator/pose', self._odom_callback, sensor_qos)
-        self.create_subscription(
-            Odometry, '/odom', self._odom_callback, sensor_qos)
 
         # State
         self.running = True
@@ -189,8 +205,10 @@ class ObjectSearcher(Node):
         # Detection
         self.last_detection = None
         self.last_detection_time = 0
+        self.last_detection_msg_time = 0  # Any message (even detected=false)
         self.consecutive_detections = 0
         self.last_seen_side = 0
+        self.detection_timeout = 30.0  # Abort if no detection messages for this long
 
         # Search tracking
         self.visited_tracker = VisitedAreaTracker(cell_size=0.5)
@@ -237,6 +255,7 @@ class ObjectSearcher(Node):
         try:
             self.last_detection = json.loads(msg.data)
             self.last_detection_time = time.time()
+            self.last_detection_msg_time = time.time()
 
             if self.last_detection.get('detected', False):
                 self.consecutive_detections += 1
@@ -658,7 +677,7 @@ class ObjectSearcher(Node):
 
         grid = OccupancyGrid()
         grid.header.stamp = self.get_clock().now().to_msg()
-        grid.header.frame_id = 'map'
+        grid.header.frame_id = 'odom'
         grid.info.resolution = self.visited_tracker.cell_size
 
         cells = list(self.visited_tracker.visited)
@@ -688,7 +707,7 @@ class ObjectSearcher(Node):
         """Publish arrow marker showing current navigate direction."""
         marker = Marker()
         marker.header.stamp = self.get_clock().now().to_msg()
-        marker.header.frame_id = 'map'
+        marker.header.frame_id = 'odom'
         marker.ns = 'goal'
         marker.id = 0
         marker.type = Marker.ARROW
@@ -739,7 +758,7 @@ class ObjectSearcher(Node):
 
         marker = Marker()
         marker.header.stamp = self.get_clock().now().to_msg()
-        marker.header.frame_id = 'map'
+        marker.header.frame_id = 'odom'
         marker.ns = 'path'
         marker.id = 0
         marker.type = Marker.LINE_STRIP
@@ -767,7 +786,7 @@ class ObjectSearcher(Node):
             # Delete marker when not scanning
             marker = Marker()
             marker.header.stamp = self.get_clock().now().to_msg()
-            marker.header.frame_id = 'map'
+            marker.header.frame_id = 'odom'
             marker.ns = 'scan'
             marker.id = 0
             marker.action = Marker.DELETE
@@ -776,7 +795,7 @@ class ObjectSearcher(Node):
 
         marker = Marker()
         marker.header.stamp = self.get_clock().now().to_msg()
-        marker.header.frame_id = 'map'
+        marker.header.frame_id = 'odom'
         marker.ns = 'scan'
         marker.id = 0
         marker.type = Marker.CYLINDER
@@ -892,6 +911,21 @@ class ObjectSearcher(Node):
         else:
             self.get_logger().warn('Starting search without odometry (limited functionality)')
 
+        # Wait for detection receiver
+        self.get_logger().info('Waiting for detection receiver...')
+        wait_start = time.time()
+        while self.last_detection_msg_time == 0 and self.running:
+            rclpy.spin_once(self, timeout_sec=0.1)
+            if time.time() - wait_start > 30:
+                self.get_logger().error(
+                    'No detection messages after 30s - aborting (detection receiver not running?)')
+                self.sit_down()
+                return
+
+        if not self.running:
+            return
+        self.get_logger().info('Detection receiver OK!')
+
         # Begin with first scan
         self._enter_scanning()
 
@@ -902,20 +936,29 @@ class ObjectSearcher(Node):
                 vel.linear.x = 0.0
                 vel.angular.z = 0.0
 
-                # Mark current position as visited
-                # During scanning, use scan-start pos (LiDAR offset causes circular drift)
+                # Mark cells the camera can see (30-deg cone, 3-10 ft ahead)
                 if self.odom_received:
-                    if self.state == STATE_SCANNING:
-                        self.visited_tracker.mark_visited(
-                            self.scan_start_x, self.scan_start_y)
-                    else:
-                        self.visited_tracker.mark_visited(self.robot_x, self.robot_y)
+                    self.visited_tracker.mark_camera_cone(
+                        self.robot_x, self.robot_y, self.robot_yaw)
 
                 # Check for target in any state (except CONFIRMED/SHUTDOWN)
                 if self.state not in (STATE_CONFIRMED, STATE_SHUTDOWN, STATE_FOUND,
                                       STATE_APPROACH):
                     if self._check_for_target():
                         self._enter_found()
+
+                # Safety: check detection receiver health
+                # If we got at least one message but then nothing for detection_timeout,
+                # the receiver has likely crashed or disconnected
+                if (self.last_detection_msg_time > 0 and
+                        self.state not in (STATE_CONFIRMED, STATE_SHUTDOWN)):
+                    detection_gap = time.time() - self.last_detection_msg_time
+                    if detection_gap > self.detection_timeout:
+                        self.get_logger().error(
+                            f'No detection messages for {detection_gap:.0f}s '
+                            f'- detection receiver lost. Aborting search.')
+                        self.running = False
+                        break
 
                 # Safety: check LiDAR freshness during navigation/approach
                 lidar_stale = (time.time() - self.last_lidar_time) > 3.0

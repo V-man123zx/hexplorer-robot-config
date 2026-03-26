@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 # Start object search system
-# Systematically searches for a target object using MOLA odometry + LiDAR obstacle avoidance.
+# Systematically searches for a target object using Fast-LIO2 odometry + LiDAR obstacle avoidance.
 #
 # Usage:
 #   bash start_object_search.sh                  # Search for person (default)
@@ -12,8 +12,8 @@
 # Environment variables:
 #   DETECT_MODE=yolo          # Detection mode: yolo, yolo-world, color
 #   TARGET=person             # What to search for
-#   SEARCH_SPEED=0.15         # Navigation speed (m/s)
-#   SCAN_SPEED=0.15           # Scan rotation speed (rad/s)
+#   SEARCH_SPEED=0.5         # Navigation speed (m/s)
+#   SCAN_SPEED=0.3          # Scan rotation speed (rad/s)
 #   NAVIGATE_DISTANCE=2.0     # Meters between scans
 #   STOP_DISTANCE=0.8         # Obstacle stop distance (m)
 #   SLOW_DISTANCE=1.5         # Obstacle slow distance (m)
@@ -65,8 +65,8 @@ else
     esac
 fi
 
-SEARCH_SPEED="${SEARCH_SPEED:-0.15}"
-SCAN_SPEED="${SCAN_SPEED:-0.15}"
+SEARCH_SPEED="${SEARCH_SPEED:-0.5}"
+SCAN_SPEED="${SCAN_SPEED:-0.3}"
 NAVIGATE_DISTANCE="${NAVIGATE_DISTANCE:-2.0}"
 STOP_DISTANCE="${STOP_DISTANCE:-0.8}"
 SLOW_DISTANCE="${SLOW_DISTANCE:-1.5}"
@@ -134,6 +134,9 @@ python3 "$HEXPLORER_DIR/bridges/odom_relay.py" &
 PIDS+=($!)
 ros2 launch fast_lio mapping.launch.py config_file:=hexplorer_mid360.yaml rviz:=false &
 PIDS+=($!)
+# Static TF: odom -> camera_init (identity) so Fast-LIO2 map topics render in odom frame
+ros2 run tf2_ros static_transform_publisher --x 0 --y 0 --z 0 --qx 0 --qy 0 --qz 0 --qw 1 --frame-id odom --child-frame-id camera_init &
+PIDS+=($!)
 sleep 3
 
 echo "[8/10] Ensuring object tracker on Jetson..."
@@ -154,7 +157,8 @@ echo ""
 # Start RViz if requested
 if [ "$RVIZ_MODE" = true ]; then
     echo "[10/10] Starting RViz + visualizer..."
-    ros2 run tf2_ros static_transform_publisher --x 0 --y 0 --z 0 --qx 0 --qy 0 --qz 0 --qw 1 --frame-id map --child-frame-id camera_color_optical_frame &
+    # TF for tracking markers (camera_color_optical_frame -> odom via base_link)
+    ros2 run tf2_ros static_transform_publisher --x 0.3 --y 0 --z 0.15 --qx -0.5 --qy 0.5 --qz -0.5 --qw 0.5 --frame-id base_link --child-frame-id camera_color_optical_frame &
     PIDS+=($!)
     python3 "$HEXPLORER_DIR/tracking/tracking_rviz_visualizer.py" &
     PIDS+=($!)
