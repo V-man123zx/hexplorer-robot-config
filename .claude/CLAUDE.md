@@ -442,6 +442,7 @@ bash ~/hexplorer/scripts/start_object_tracking.sh --smart  # Smart follower
 bash ~/hexplorer/scripts/start_object_search.sh            # Object search (UNTESTED)
 bash ~/hexplorer/scripts/start_fastlio.sh                  # Fast-LIO2 odometry
 bash ~/hexplorer/scripts/start_obstacle_avoidance.sh       # Obstacle avoidance
+bash ~/hexplorer/scripts/start_voice_demo.sh              # Voice-controlled demo
 ```
 
 ---
@@ -500,3 +501,76 @@ STANDUP -> SCANNING (360 rotate) -> NAVIGATING (toward unvisited) -> SCANNING ->
 
 ### Testing Status
 Core search logic tested on 2026-02-25. Updated 2026-03-24 to use Fast-LIO2 (LiDAR+IMU) instead of MOLA. **Needs re-testing** with Fast-LIO2 odometry.
+
+---
+
+## Voice-Controlled Demo (2026-03-27)
+
+ElevenLabs Conversational AI agent with wake word detection. Says "hey robot" to activate, then natural language controls the robot via client tool calls.
+
+### Quick Start
+```bash
+bash ~/hexplorer/scripts/start_voice_demo.sh           # Normal mode
+bash ~/hexplorer/scripts/start_voice_demo.sh --debug   # Debug (no robot commands)
+bash ~/hexplorer/scripts/start_voice_demo.sh --rviz    # With RViz
+```
+
+### Auto-Start on Boot
+Runs as a systemd user service with linger enabled:
+```bash
+systemctl --user status hexplorer-voice    # Check status
+systemctl --user stop hexplorer-voice      # Stop
+systemctl --user start hexplorer-voice     # Start
+systemctl --user disable hexplorer-voice   # Disable auto-start
+journalctl --user -u hexplorer-voice -f    # Live logs
+```
+**Note:** Service waits for PulseAudio (RDP login) before starting. Headless audio not yet configured.
+
+### Available Voice Actions
+
+| Action | Example phrases | Parameters |
+|--------|----------------|------------|
+| `move` | "walk forward 3 meters", "turn right 30 degrees" | direction (forward/backward/left/right), amount (meters or degrees) |
+| `follow` | "follow a person", "follow the red ball" | target, detect_mode |
+| `search` | "find a bottle", "search for a chair" | target, detect_mode |
+| `stand` | "stand up" | — |
+| `sit` | "sit down" | — |
+| `dance` | "dance the Macarena" | — |
+| `stop` | "stop" | — |
+| `set_speed` | "go faster", "slow down" | speed (slow/medium/fast) |
+
+### Speed Presets
+
+| Preset | Walk Speed | Max Follow | Turn Speed |
+|--------|-----------|------------|------------|
+| slow | 0.10 m/s | 0.15 m/s | 0.10 rad/s |
+| medium | 0.20 m/s | 0.30 m/s | 0.15 rad/s |
+| fast | 0.35 m/s | 0.50 m/s | 0.25 rad/s |
+
+### Key Architecture
+- Wake word: local Whisper (small, int8) with energy-based VAD
+- Agent: ElevenLabs Conversational AI, single client tool `execute_robot_action`
+- Actions run in background threads; `action_lock` serializes them to prevent conflicts
+- `_cancel` event allows interrupting long movements (e.g. "stop" during 10m walk)
+- Connection retry: 3 attempts on WebSocket failure, detects dead thread mid-session
+- `set_speed` live-restarts running follow/search subprocess with new speed params
+- Session logs: `~/hexplorer/logs/voice_sessions/session_YYYYMMDD_HHMMSS.log`
+
+### ElevenLabs Dashboard Config
+- Tool `execute_robot_action` parameters: `action` (required), all others optional
+- `direction` and `amount` must be **optional** — if required, agent fails to call non-move actions like follow
+- Agent system prompt should explain: amount = meters for forward/backward, degrees for left/right
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `~/hexplorer/voice/voice_demo.py` | Main voice demo (wake word + agent + behavior manager) |
+| `~/hexplorer/voice/.env` | API keys (ELEVENLABS_API_KEY, AGENT_ID) |
+| `~/hexplorer/scripts/start_voice_demo.sh` | Launch script (infra + voice) |
+| `~/.config/systemd/user/hexplorer-voice.service` | Auto-start service |
+
+### Known Issues
+- WiFi drops cause transient WebSocket failures (retry handles this)
+- RDP audio (PulseAudio) required — no headless audio yet
+- ElevenLabs agent sometimes sends `direction`/`amount` for non-move actions — code ignores them, but if set as required in dashboard schema, agent refuses to call the tool
