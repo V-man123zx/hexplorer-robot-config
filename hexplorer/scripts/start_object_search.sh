@@ -14,7 +14,7 @@
 #   TARGET=person             # What to search for
 #   SEARCH_SPEED=0.5         # Navigation speed (m/s)
 #   SCAN_SPEED=0.3          # Scan rotation speed (rad/s)
-#   NAVIGATE_DISTANCE=2.0     # Meters between scans
+#   NAVIGATE_DISTANCE=4.0     # Meters between scans
 #   STOP_DISTANCE=0.8         # Obstacle stop distance (m)
 #   SLOW_DISTANCE=1.5         # Obstacle slow distance (m)
 #   CONFIRM_DISTANCE=1500     # Approach distance (mm)
@@ -67,7 +67,7 @@ fi
 
 SEARCH_SPEED="${SEARCH_SPEED:-0.5}"
 SCAN_SPEED="${SCAN_SPEED:-0.3}"
-NAVIGATE_DISTANCE="${NAVIGATE_DISTANCE:-2.0}"
+NAVIGATE_DISTANCE="${NAVIGATE_DISTANCE:-4.0}"
 STOP_DISTANCE="${STOP_DISTANCE:-0.8}"
 SLOW_DISTANCE="${SLOW_DISTANCE:-1.5}"
 CONFIRM_DISTANCE="${CONFIRM_DISTANCE:-1500}"

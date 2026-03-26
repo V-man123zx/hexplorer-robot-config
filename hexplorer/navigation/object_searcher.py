@@ -100,11 +100,11 @@ class VisitedAreaTracker:
                                   int(math.floor(py / self.cell_size))))
                 angle += arc_step
 
-    def get_best_direction(self, robot_x, robot_y, robot_yaw, num_dirs=8):
-        """Check num_dirs directions, return angle with fewest visited cells along 3m ray."""
+    def get_best_direction(self, robot_x, robot_y, robot_yaw, num_dirs=16):
+        """Check num_dirs directions, return angle with fewest visited cells along 6m ray."""
         best_angle = robot_yaw  # Default: keep going forward
         best_score = -1
-        ray_length = 3.0
+        ray_length = 6.0
         step = 0.25
 
         for i in range(num_dirs):
@@ -1063,7 +1063,7 @@ def parse_args():
                         help='Forward speed while navigating (m/s)')
     parser.add_argument('--scan-speed', type=float, default=0.15,
                         help='Rotation speed during 360-degree scans (rad/s)')
-    parser.add_argument('--navigate-distance', type=float, default=2.0,
+    parser.add_argument('--navigate-distance', type=float, default=4.0,
                         help='Distance between scan points (m)')
     parser.add_argument('--stop-distance', type=float, default=0.8,
                         help='Obstacle stop distance (m)')
