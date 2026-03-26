@@ -246,7 +246,7 @@ class ObjectSearcher(Node):
         self.detection_timeout = 30.0  # Abort if no detection messages for this long
 
         # Search tracking
-        self.visited_tracker = VisitedAreaTracker(cell_size=0.5)
+        self.visited_tracker = VisitedAreaTracker(cell_size=0.15)
         self.scan_count = 0
         self.search_start_time = 0
 
