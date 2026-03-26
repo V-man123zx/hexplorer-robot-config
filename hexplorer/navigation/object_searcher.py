@@ -269,6 +269,8 @@ class ObjectSearcher(Node):
         self.nav_stuck_replans = 0    # Consecutive stuck replans without progress
         self.nav_last_progress_x = 0.0
         self.nav_last_progress_y = 0.0
+        self.nav_no_progress_time = 0  # Timestamp when we last made progress
+        self.nav_no_progress_timeout = 10.0  # Seconds without moving -> stuck
 
         # Found/Approach state
         self.found_start_time = 0
@@ -552,6 +554,7 @@ class ObjectSearcher(Node):
         self.nav_stuck_replans = 0
         self.nav_last_progress_x = self.robot_x
         self.nav_last_progress_y = self.robot_y
+        self.nav_no_progress_time = time.time()
 
         # Pick best direction (wall-aware)
         angle, visited_ratio = self.visited_tracker.get_best_direction(
@@ -628,14 +631,41 @@ class ObjectSearcher(Node):
                         f'(visited ratio: {visited_ratio:.0%})')
             return vel
         else:
-            # Making progress — reset stuck counters
-            dx_prog = self.robot_x - self.nav_last_progress_x
-            dy_prog = self.robot_y - self.nav_last_progress_y
-            if math.sqrt(dx_prog*dx_prog + dy_prog*dy_prog) > 0.5:
+            # Decay obstacle count instead of hard reset (handles flickering LiDAR)
+            self.nav_obstacle_count = max(0, self.nav_obstacle_count - 1)
+
+        # Track position-based progress
+        dx_prog = self.robot_x - self.nav_last_progress_x
+        dy_prog = self.robot_y - self.nav_last_progress_y
+        if math.sqrt(dx_prog*dx_prog + dy_prog*dy_prog) > 0.5:
+            self.nav_stuck_replans = 0
+            self.nav_last_progress_x = self.robot_x
+            self.nav_last_progress_y = self.robot_y
+            self.nav_no_progress_time = now
+        elif now - self.nav_no_progress_time > self.nav_no_progress_timeout:
+            # Haven't moved 0.5m in 10 seconds — we're stuck
+            self.nav_stuck_replans += 1
+            self.nav_no_progress_time = now
+            if self.nav_stuck_replans >= 3:
+                back_angle = math.atan2(
+                    self.nav_start_y - self.robot_y,
+                    self.nav_start_x - self.robot_x)
+                self.nav_target_angle = back_angle
+                self.nav_start_x = self.robot_x
+                self.nav_start_y = self.robot_y
+                self.get_logger().info(
+                    f'No progress for {self.nav_stuck_replans}x — backtracking '
+                    f'toward {math.degrees(back_angle):.0f} deg')
                 self.nav_stuck_replans = 0
-                self.nav_last_progress_x = self.robot_x
-                self.nav_last_progress_y = self.robot_y
-            self.nav_obstacle_count = 0
+            else:
+                angle, visited_ratio = self.visited_tracker.get_best_direction(
+                    self.robot_x, self.robot_y, self.robot_yaw)
+                self.nav_target_angle = angle
+                self.get_logger().info(
+                    f'No progress ({self.nav_stuck_replans}/3), '
+                    f'replanning to {math.degrees(angle):.0f} deg '
+                    f'(visited ratio: {visited_ratio:.0%})')
+            self.nav_last_eval_time = now
 
         if lidar_fresh and self.front_min_distance < self.slow_distance:
             # Slow zone - reduce speed
