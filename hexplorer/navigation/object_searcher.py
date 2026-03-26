@@ -115,34 +115,37 @@ class VisitedAreaTracker:
                     self.visited.add(cell)
                 angle += arc_step
 
-    def get_best_direction(self, robot_x, robot_y, robot_yaw, num_dirs=16,
-                           blocked_angles=None):
+    def get_best_direction(self, robot_x, robot_y, robot_yaw, num_dirs=16):
         """Check num_dirs directions, return angle with most reachable unvisited cells.
 
-        Rays terminate when they hit a blocked (wall) cell — can't see or travel through walls.
-        blocked_angles: set of direction indices to skip (used for stuck avoidance).
+        Rays terminate when they hit a blocked (wall) cell.
+        If ALL directions are fully visited/blocked, falls back to the direction
+        with the longest clear distance (most room to move).
         """
         best_angle = robot_yaw
         best_score = -1
         ray_length = 6.0
         step = 0.25
-        total = 0
+        total_all = 0
+
+        # Also track clear distance per direction as fallback
+        best_clear_dist = 0.0
+        best_clear_angle = robot_yaw
 
         for i in range(num_dirs):
-            if blocked_angles and i in blocked_angles:
-                continue
             angle = robot_yaw + (2 * math.pi * i / num_dirs)
             unvisited = 0
+            clear_dist = 0.0
             for d_idx in range(1, int(ray_length / step) + 1):
                 d = d_idx * step
                 px = robot_x + d * math.cos(angle)
                 py = robot_y + d * math.sin(angle)
                 gx = int(math.floor(px / self.cell_size))
                 gy = int(math.floor(py / self.cell_size))
-                # Wall hit — stop this ray, can't go further
                 if (gx, gy) in self.blocked:
                     break
-                total += 1
+                clear_dist = d
+                total_all += 1
                 if (gx, gy) not in self.visited:
                     unvisited += 1
 
@@ -150,7 +153,15 @@ class VisitedAreaTracker:
                 best_score = unvisited
                 best_angle = angle
 
-        visited_ratio = 1.0 - (best_score / max(total, 1)) if total > 0 else 1.0
+            if clear_dist > best_clear_dist:
+                best_clear_dist = clear_dist
+                best_clear_angle = angle
+
+        # If no unvisited cells found, go where there's the most open space
+        if best_score <= 0:
+            return best_clear_angle, 1.0
+
+        visited_ratio = 1.0 - (best_score / max(total_all, 1)) if total_all > 0 else 1.0
         return best_angle, visited_ratio
 
     def get_coverage_stats(self):
@@ -255,6 +266,9 @@ class ObjectSearcher(Node):
         self.nav_eval_interval = 3.0  # Re-evaluate direction every 3 seconds
         self.nav_obstacle_count = 0   # How many loops obstacle avoidance has been active
         self.nav_obstacle_replan_threshold = 50  # ~2 seconds at 25Hz -> force replan
+        self.nav_stuck_replans = 0    # Consecutive stuck replans without progress
+        self.nav_last_progress_x = 0.0
+        self.nav_last_progress_y = 0.0
 
         # Found/Approach state
         self.found_start_time = 0
@@ -531,11 +545,13 @@ class ObjectSearcher(Node):
     def _enter_navigating(self):
         """Begin navigating toward unvisited area."""
         self.state = STATE_NAVIGATING
-        # Use scan-start position as nav origin (avoids LiDAR offset drift)
         self.nav_start_x = self.scan_start_x
         self.nav_start_y = self.scan_start_y
         self.nav_last_eval_time = time.time()
         self.nav_obstacle_count = 0
+        self.nav_stuck_replans = 0
+        self.nav_last_progress_x = self.robot_x
+        self.nav_last_progress_y = self.robot_y
 
         # Pick best direction (wall-aware)
         angle, visited_ratio = self.visited_tracker.get_best_direction(
@@ -581,20 +597,44 @@ class ObjectSearcher(Node):
             # Detect stuck loop: obstacle avoidance keeps firing
             self.nav_obstacle_count += 1
             if self.nav_obstacle_count >= self.nav_obstacle_replan_threshold:
-                # Wall ahead — force immediate replan excluding current direction
-                self.get_logger().info(
-                    f'Stuck at wall (obstacle for {self.nav_obstacle_count} cycles), '
-                    f'replanning away from {math.degrees(self.nav_target_angle):.0f} deg')
-                angle, visited_ratio = self.visited_tracker.get_best_direction(
-                    self.robot_x, self.robot_y, self.robot_yaw)
-                self.nav_target_angle = angle
-                self.nav_last_eval_time = now
+                self.nav_stuck_replans += 1
                 self.nav_obstacle_count = 0
-                self.get_logger().info(
-                    f'New direction: {math.degrees(angle):.0f} deg '
-                    f'(visited ratio: {visited_ratio:.0%})')
+
+                if self.nav_stuck_replans >= 3:
+                    # Repeatedly stuck — backtrack toward where we came from
+                    back_angle = math.atan2(
+                        self.nav_start_y - self.robot_y,
+                        self.nav_start_x - self.robot_x)
+                    self.nav_target_angle = back_angle
+                    self.nav_last_eval_time = now
+                    self.get_logger().info(
+                        f'Stuck {self.nav_stuck_replans}x — backtracking toward '
+                        f'{math.degrees(back_angle):.0f} deg')
+                    # Reset nav start so we travel away from here
+                    self.nav_start_x = self.robot_x
+                    self.nav_start_y = self.robot_y
+                    self.nav_stuck_replans = 0
+                else:
+                    # Try replanning
+                    self.get_logger().info(
+                        f'Stuck at wall ({self.nav_stuck_replans}/3), '
+                        f'replanning away from {math.degrees(self.nav_target_angle):.0f} deg')
+                    angle, visited_ratio = self.visited_tracker.get_best_direction(
+                        self.robot_x, self.robot_y, self.robot_yaw)
+                    self.nav_target_angle = angle
+                    self.nav_last_eval_time = now
+                    self.get_logger().info(
+                        f'New direction: {math.degrees(angle):.0f} deg '
+                        f'(visited ratio: {visited_ratio:.0%})')
             return vel
         else:
+            # Making progress — reset stuck counters
+            dx_prog = self.robot_x - self.nav_last_progress_x
+            dy_prog = self.robot_y - self.nav_last_progress_y
+            if math.sqrt(dx_prog*dx_prog + dy_prog*dy_prog) > 0.5:
+                self.nav_stuck_replans = 0
+                self.nav_last_progress_x = self.robot_x
+                self.nav_last_progress_y = self.robot_y
             self.nav_obstacle_count = 0
 
         if lidar_fresh and self.front_min_distance < self.slow_distance:
