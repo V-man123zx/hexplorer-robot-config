@@ -58,6 +58,13 @@ STATE_STANDUP = 2
 STATE_BALANCESTAND = 3
 STATE_WALK = 4
 
+# Speed presets: (follow_max_speed, follow_turn_speed, search_speed, walk_vx)
+SPEED_PRESETS = {
+    "slow":   {"max_speed": 0.15, "turn_speed": 0.10, "search_speed": 0.10, "walk_vx": 0.10},
+    "medium": {"max_speed": 0.30, "turn_speed": 0.15, "search_speed": 0.15, "walk_vx": 0.20},
+    "fast":   {"max_speed": 0.50, "turn_speed": 0.25, "search_speed": 0.25, "walk_vx": 0.35},
+}
+
 # ─── Wake Word Listener ─────────────────────────────────────────────────────
 
 class WakeWordListener:
@@ -177,8 +184,14 @@ class BehaviorManager:
         self.debug = debug
         self.current_process = None
         self.current_action = None
+        self.current_target = None
+        self.current_detect_mode = None
+        self.current_smart = False
         self.jetson_target = None
         self.jetson_detect_mode = None
+        self.speed_mode = "medium"
+        self.action_lock = threading.Lock()
+        self._cancel = threading.Event()
         self.ros_env = self._build_ros_env()
 
         if not debug:
@@ -205,7 +218,7 @@ class BehaviorManager:
         time.sleep(0.3)
 
     def _publish_cmd(self, state, duration, vx=0.0, vz=0.0):
-        """Publish robot command at 20Hz for given duration."""
+        """Publish robot command at 20Hz for given duration. Stops early if cancelled."""
         if self.debug:
             print(f"  [DEBUG] Would publish state={state} vx={vx} vz={vz} for {duration}s")
             return
@@ -216,6 +229,8 @@ class BehaviorManager:
         vel.angular.z = vz
         ticks = int(duration / 0.05)
         for _ in range(ticks):
+            if self._cancel.is_set():
+                return
             self.cmd_pub.publish(cmd)
             self.vel_pub.publish(vel)
             time.sleep(0.05)
@@ -229,7 +244,8 @@ class BehaviorManager:
         return subprocess.run(full_cmd, shell=True, capture_output=True, text=True, timeout=15)
 
     def stop_current(self):
-        """Stop current behavior subprocess, let it sit down gracefully."""
+        """Stop current behavior subprocess and cancel any inline movement."""
+        self._cancel.set()
         if self.current_process and self.current_process.poll() is None:
             print(f"  Stopping current behavior ({self.current_action})...")
             self.current_process.send_signal(signal.SIGINT)
@@ -240,6 +256,7 @@ class BehaviorManager:
                 self.current_process.wait()
         self.current_process = None
         self.current_action = None
+        self._cancel.clear()
 
     def update_jetson_tracker(self, target, detect_mode):
         """Restart Jetson tracker if target/mode changed. Returns True on success."""
@@ -282,16 +299,19 @@ class BehaviorManager:
         if not self.update_jetson_tracker(target, detect_mode):
             return "Failed to switch vision target"
 
+        sp = SPEED_PRESETS[self.speed_mode]
         if use_smart:
             script = os.path.join(HEXPLORER_DIR, "tracking", "smart_follower.py")
             cmd = ["python3", script,
-                   "--target-distance", "800", "--max-speed", "0.3",
+                   "--target-distance", "800",
+                   "--max-speed", str(sp["max_speed"]),
                    "--turn-speed", "0.8"]
         else:
             script = os.path.join(HEXPLORER_DIR, "tracking", "object_follower.py")
             cmd = ["python3", script,
-                   "--target-distance", "800", "--max-speed", "0.3",
-                   "--turn-speed", "0.15"]
+                   "--target-distance", "800",
+                   "--max-speed", str(sp["max_speed"]),
+                   "--turn-speed", str(sp["turn_speed"])]
 
         if self.debug:
             print(f"  [DEBUG] Would run: {' '.join(cmd)}")
@@ -299,6 +319,9 @@ class BehaviorManager:
             self.current_process = subprocess.Popen(cmd, env=self.ros_env)
 
         self.current_action = "follow"
+        self.current_target = target
+        self.current_detect_mode = detect_mode
+        self.current_smart = use_smart
         mode_label = "smart follow" if use_smart else "follow"
         return f"Now {mode_label}ing {target}"
 
@@ -308,9 +331,11 @@ class BehaviorManager:
         if not self.update_jetson_tracker(target, detect_mode):
             return "Failed to switch vision target"
 
+        sp = SPEED_PRESETS[self.speed_mode]
         script = os.path.join(HEXPLORER_DIR, "navigation", "object_searcher.py")
         cmd = ["python3", script,
-               "--search-speed", "0.15", "--scan-speed", "0.15",
+               "--search-speed", str(sp["search_speed"]),
+               "--scan-speed", str(sp["search_speed"]),
                "--navigate-distance", "2.0", "--stop-distance", "0.8"]
 
         if self.debug:
@@ -319,6 +344,8 @@ class BehaviorManager:
             self.current_process = subprocess.Popen(cmd, env=self.ros_env)
 
         self.current_action = "search"
+        self.current_target = target
+        self.current_detect_mode = detect_mode
         return f"Searching for {target}"
 
     def start_dance(self):
@@ -352,18 +379,49 @@ class BehaviorManager:
         self.current_action = None
         return "Sitting down"
 
-    def do_come_here(self):
-        """Walk forward briefly."""
+    def do_move(self, direction, amount=None):
+        """Execute a precise movement: walk a distance or turn an angle.
+
+        Args:
+            direction: 'forward', 'backward', 'left', 'right'
+            amount: meters (for forward/backward) or degrees (for left/right)
+        """
         self.stop_current()
-        # Stand up first if needed
-        for state in [STATE_STANDDOWN, STATE_STANDUP, STATE_BALANCESTAND]:
-            self._publish_cmd(state, 2.0)
-        # Walk forward for 3 seconds
-        self._publish_cmd(STATE_WALK, 3.0, vx=0.2)
-        # Back to balance stand
-        self._publish_cmd(STATE_BALANCESTAND, 1.0)
-        self.current_action = "standing"
-        return "Coming toward you"
+
+        direction = direction.lower().strip()
+        sp = SPEED_PRESETS[self.speed_mode]
+
+        # Stand up first if not already standing
+        if self.current_action != "standing":
+            for state in [STATE_STANDDOWN, STATE_STANDUP, STATE_BALANCESTAND]:
+                self._publish_cmd(state, 2.0)
+
+        if direction in ("forward", "backward"):
+            dist = float(amount) if amount else 1.0
+            dist = min(dist, 10.0)  # safety cap at 10m
+            speed = sp["walk_vx"]
+            vx = speed if direction == "forward" else -speed
+            duration = dist / speed
+            self._publish_cmd(STATE_WALK, duration, vx=vx)
+            self._publish_cmd(STATE_BALANCESTAND, 1.0)
+            self.current_action = "standing"
+            return f"Moved {direction} {dist:.1f} meters"
+
+        elif direction in ("left", "right"):
+            deg = float(amount) if amount else 90.0
+            deg = min(deg, 360.0)  # safety cap
+            rad = deg * 3.14159 / 180.0
+            turn_speed = 0.4  # rad/s — moderate turn rate
+            # positive angular.z = left (counterclockwise), negative = right
+            vz = turn_speed if direction == "left" else -turn_speed
+            duration = rad / turn_speed
+            self._publish_cmd(STATE_WALK, duration, vz=vz)
+            self._publish_cmd(STATE_BALANCESTAND, 1.0)
+            self.current_action = "standing"
+            return f"Turned {direction} {deg:.0f} degrees"
+
+        else:
+            return f"Unknown direction '{direction}'. Use forward, backward, left, or right."
 
     def do_stop(self):
         """Stop current behavior."""
@@ -379,11 +437,39 @@ class BehaviorManager:
             self.do_sit()
             self.node.destroy_node()
 
-    def execute_action(self, action, target=None, detect_mode="yolo-world", use_smart=False):
-        """Execute a robot action. Returns status string."""
-        print(f"  Executing: action={action} target={target} mode={detect_mode} smart={use_smart}")
+    def set_speed(self, speed_mode):
+        """Set speed mode: slow, medium, or fast. Restarts current behavior with new speed."""
+        speed_mode = speed_mode.lower().strip()
+        if speed_mode not in SPEED_PRESETS:
+            return f"Unknown speed '{speed_mode}'. Use slow, medium, or fast."
+        if speed_mode == self.speed_mode:
+            return f"Already at {speed_mode} speed"
+        self.speed_mode = speed_mode
+        # Restart current behavior with new speed parameters
+        if self.current_action == "follow" and self.current_target:
+            self.start_follow(self.current_target, self.current_detect_mode or "yolo",
+                              self.current_smart)
+        elif self.current_action == "search" and self.current_target:
+            self.start_search(self.current_target, self.current_detect_mode or "yolo")
+        return f"Speed set to {speed_mode}"
 
-        if action == "follow":
+    def execute_action(self, action, target=None, detect_mode="yolo-world", use_smart=False, speed=None,
+                       direction=None, amount=None):
+        """Execute a robot action. Returns status string. Thread-safe via action_lock."""
+        with self.action_lock:
+            return self._execute_action_inner(action, target, detect_mode, use_smart, speed, direction, amount)
+
+    def _execute_action_inner(self, action, target, detect_mode, use_smart, speed, direction, amount):
+        self._cancel.clear()
+        print(f"  Executing: action={action} target={target} mode={detect_mode} smart={use_smart} speed={speed} dir={direction} amount={amount}")
+
+        if action == "set_speed":
+            return self.set_speed(speed or target or "medium")
+        elif action == "move":
+            if not direction:
+                return "I need a direction: forward, backward, left, or right."
+            return self.do_move(direction, amount)
+        elif action == "follow":
             if not target:
                 return "I need to know what to follow. What should I look for?"
             return self.start_follow(target, detect_mode, use_smart)
@@ -397,8 +483,6 @@ class BehaviorManager:
             return self.do_stand()
         elif action == "sit":
             return self.do_sit()
-        elif action == "come_here":
-            return self.do_come_here()
         elif action == "stop":
             return self.do_stop()
         else:
@@ -459,28 +543,42 @@ class AgentSession:
         target = parameters.get("target", None)
         detect_mode = parameters.get("detect_mode", "yolo-world")
         use_smart = parameters.get("use_smart", False)
+        speed = parameters.get("speed", None)
+        direction = parameters.get("direction", None)
+        amount = parameters.get("amount", None)
 
         # Run action in background thread so we return fast
         def _run():
-            result = self.behavior.execute_action(action, target, detect_mode, use_smart)
+            result = self.behavior.execute_action(action, target, detect_mode, use_smart, speed,
+                                                  direction, amount)
             self._log("RESULT", result)
 
         threading.Thread(target=_run, daemon=True).start()
 
         # Return immediately with confirmation
+        # Build move confirmation
+        if direction and action == "move":
+            if direction in ("forward", "backward"):
+                move_desc = f"Moving {direction} {amount or 1} meters"
+            else:
+                move_desc = f"Turning {direction} {amount or 90} degrees"
+        else:
+            move_desc = "Moving now"
+
         confirmations = {
             "follow": f"Following {target or 'object'}",
             "search": f"Searching for {target or 'object'}",
             "dance": "Starting the Macarena",
             "stand": "Standing up now",
             "sit": "Sitting down now",
-            "come_here": "Coming toward you",
             "stop": "Stopping",
+            "set_speed": f"Speed set to {speed or target or 'medium'}",
+            "move": move_desc,
         }
         return confirmations.get(action, f"Executing {action}")
 
-    def start(self):
-        """Start the agent conversation session."""
+    def start(self, max_retries=3):
+        """Start the agent conversation session with retry on connection failure."""
         from elevenlabs import ElevenLabs
         from elevenlabs.conversational_ai.conversation import Conversation, ClientTools
         from elevenlabs.conversational_ai.default_audio_interface import DefaultAudioInterface
@@ -488,34 +586,53 @@ class AgentSession:
         self.session_active = True
         self.last_activity = time.time()
 
-        # Create client and client tools
-        client = ElevenLabs(api_key=self.api_key)
+        for attempt in range(1, max_retries + 1):
+            # Create client and client tools
+            client = ElevenLabs(api_key=self.api_key)
 
-        client_tools = ClientTools()
-        client_tools.register(
-            "execute_robot_action",
-            self._handle_tool_call
-        )
+            client_tools = ClientTools()
+            client_tools.register(
+                "execute_robot_action",
+                self._handle_tool_call
+            )
 
-        self.conversation = Conversation(
-            client=client,
-            agent_id=self.agent_id,
-            requires_auth=False,
-            audio_interface=DefaultAudioInterface(),
-            client_tools=client_tools,
-            callback_agent_response=lambda response: self._handle_agent_response(response),
-            callback_user_transcript=lambda transcript: self._handle_user_transcript(transcript),
-        )
+            self.conversation = Conversation(
+                client=client,
+                agent_id=self.agent_id,
+                requires_auth=False,
+                audio_interface=DefaultAudioInterface(),
+                client_tools=client_tools,
+                callback_agent_response=lambda response: self._handle_agent_response(response),
+                callback_user_transcript=lambda transcript: self._handle_user_transcript(transcript),
+            )
 
-        self._log("SYS  ", "Starting agent session...")
-        self.conversation.start_session()
-        self._log("SYS  ", "Agent session started — listening for commands")
+            self._log("SYS  ", f"Starting agent session (attempt {attempt}/{max_retries})...")
+            self.conversation.start_session()
+
+            # Wait briefly and check if the internal thread is still alive (connection succeeded)
+            time.sleep(2)
+            if self.conversation._thread and self.conversation._thread.is_alive():
+                self._log("SYS  ", "Agent session started — listening for commands")
+                return True
+
+            self._log("SYS  ", f"Connection failed on attempt {attempt}")
+            if attempt < max_retries:
+                self._log("SYS  ", f"Retrying in 3 seconds...")
+                time.sleep(3)
+
+        self._log("SYS  ", "All connection attempts failed")
+        self.session_active = False
+        return False
 
     def wait_for_end(self, idle_timeout=60):
-        """Wait for session to end (idle timeout or explicit end)."""
+        """Wait for session to end (idle timeout, dead connection, or explicit end)."""
         try:
             while self.session_active:
                 time.sleep(1.0)
+                # Detect dead WebSocket thread (connection dropped mid-session)
+                if self.conversation and self.conversation._thread and not self.conversation._thread.is_alive():
+                    print("  Connection lost, ending session...")
+                    break
                 idle = time.time() - self.last_activity
                 if idle > idle_timeout:
                     print(f"  Session idle for {idle_timeout}s, ending...")
@@ -624,7 +741,11 @@ def main():
 
             # Start agent session
             active_session = AgentSession(behavior, agent_id, api_key)
-            active_session.start()
+            if not active_session.start():
+                print("Could not connect to ElevenLabs. Listening for wake word again...\n")
+                active_session.end()
+                active_session = None
+                continue
 
             # Pause wake word listener during agent session (agent has its own mic)
             listener.pause()
