@@ -31,8 +31,8 @@ Visualization Manager:
         Depth: 5
         History Policy: Keep Last
         Reliability Policy: Reliable
-      Alpha: 0.8
-      Color Scheme: costmap
+      Alpha: 1.0
+      Color Scheme: map
       Draw Behind: true
     - Class: rviz_default_plugins/Marker
       Name: Goal Arrow

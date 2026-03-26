@@ -70,19 +70,25 @@ STATE_SHUTDOWN = 'SHUTDOWN'
 class VisitedAreaTracker:
     """Grid-based coverage tracker with wall awareness for search planning."""
 
-    def __init__(self, cell_size=0.5):
+    WALL_HIT_THRESHOLD = 5  # Need this many LiDAR hits before a cell is considered a wall
+
+    def __init__(self, cell_size=0.25):
         self.cell_size = cell_size
-        self.visited = set()   # {(grid_x, grid_y), ...}
-        self.blocked = set()   # Cells with walls/obstacles (from LiDAR)
+        self.visited = set()       # {(grid_x, grid_y), ...}
+        self.blocked = set()       # Confirmed wall cells
+        self._block_hits = {}      # {(gx,gy): hit_count} — accumulate before confirming
 
     def mark_visited(self, x, y):
         self.visited.add((int(math.floor(x / self.cell_size)),
                           int(math.floor(y / self.cell_size))))
 
     def mark_blocked(self, x, y):
-        """Mark a world-coordinate position as blocked (wall/obstacle)."""
-        self.blocked.add((int(math.floor(x / self.cell_size)),
-                          int(math.floor(y / self.cell_size))))
+        """Accumulate a wall hit. Only confirms as blocked after enough hits."""
+        cell = (int(math.floor(x / self.cell_size)),
+                int(math.floor(y / self.cell_size)))
+        self._block_hits[cell] = self._block_hits.get(cell, 0) + 1
+        if self._block_hits[cell] >= self.WALL_HIT_THRESHOLD:
+            self.blocked.add(cell)
 
     def mark_camera_cone(self, robot_x, robot_y, robot_yaw,
                          half_angle=math.radians(15), min_dist=0.9, max_dist=3.0):
@@ -373,16 +379,19 @@ class ObjectSearcher(Node):
             else:
                 self.back_min_distance = float('inf')
 
-            # Mark obstacle points as blocked cells in world coordinates
-            # so the direction planner knows where walls are
+            # Mark close obstacle points as wall cells in world coordinates
+            # Tighter height filter (0.15-1.0m) to avoid ground noise
+            # Only within stop_distance to avoid over-marking
             if self.odom_received:
-                obstacle_mask = distances < self.slow_distance
-                obstacle_pts = points[obstacle_mask]
-                if len(obstacle_pts) > 0:
+                wall_mask = ((distances > LIDAR_MIN_DISTANCE) &
+                             (distances < self.stop_distance) &
+                             (points[:, 2] > 0.15) &
+                             (points[:, 2] < 1.0))
+                wall_pts = points[wall_mask]
+                if len(wall_pts) > 0:
                     cos_yaw = math.cos(self.robot_yaw)
                     sin_yaw = math.sin(self.robot_yaw)
-                    for pt in obstacle_pts:
-                        # Transform from robot frame to world frame
+                    for pt in wall_pts:
                         wx = self.robot_x + pt[0] * cos_yaw - pt[1] * sin_yaw
                         wy = self.robot_y + pt[0] * sin_yaw + pt[1] * cos_yaw
                         self.visited_tracker.mark_blocked(wx, wy)
