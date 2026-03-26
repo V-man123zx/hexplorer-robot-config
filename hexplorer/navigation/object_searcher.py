@@ -116,31 +116,23 @@ class VisitedAreaTracker:
                 angle += arc_step
 
     def get_best_direction(self, robot_x, robot_y, robot_yaw, num_dirs=16):
-        """Check num_dirs directions, return angle with most reachable unvisited cells.
+        """Check num_dirs directions, return angle with most open space + unvisited cells.
 
-        Blocked cells are penalized but don't immediately terminate the ray — only
-        3+ consecutive blocked cells (a real wall) stop the ray. Stray blocked cells
-        just reduce the score.
-        If ALL directions are fully visited/blocked, falls back to the direction
-        with the longest clear distance (most room to move).
+        Rays terminate when they hit a blocked (wall) cell.
+        Score = unvisited_cells + 0.1 * visited_cells (so open visited areas
+        always beat wall-blocked directions). This prevents the robot from
+        getting stuck when the only passable direction is already visited.
         """
         best_angle = robot_yaw
-        best_score = -1
+        best_score = -1.0
         ray_length = 6.0
-        step = 0.25
+        step = self.cell_size  # Step at cell resolution so we don't skip walls
         total_all = 0
-        wall_thickness = 3  # Consecutive blocked cells needed to stop a ray
-
-        # Also track clear distance per direction as fallback
-        best_clear_dist = 0.0
-        best_clear_angle = robot_yaw
 
         for i in range(num_dirs):
             angle = robot_yaw + (2 * math.pi * i / num_dirs)
             unvisited = 0
-            clear_dist = 0.0
-            consecutive_blocked = 0
-            hit_wall = False
+            visited = 0
             for d_idx in range(1, int(ray_length / step) + 1):
                 d = d_idx * step
                 px = robot_x + d * math.cos(angle)
@@ -148,30 +140,27 @@ class VisitedAreaTracker:
                 gx = int(math.floor(px / self.cell_size))
                 gy = int(math.floor(py / self.cell_size))
                 if (gx, gy) in self.blocked:
-                    consecutive_blocked += 1
-                    if consecutive_blocked >= wall_thickness:
-                        hit_wall = True
-                        break
+                    break
+                total_all += 1
+                if (gx, gy) not in self.visited:
+                    unvisited += 1
                 else:
-                    consecutive_blocked = 0
-                    clear_dist = d
-                    total_all += 1
-                    if (gx, gy) not in self.visited:
-                        unvisited += 1
+                    visited += 1
 
-            if unvisited > best_score:
-                best_score = unvisited
+            # Unvisited cells are worth 1 point, visited cells worth 0.1
+            # So open-but-visited paths still beat wall-blocked paths
+            score = unvisited + 0.1 * visited
+            if score > best_score:
+                best_score = score
                 best_angle = angle
 
-            if clear_dist > best_clear_dist:
-                best_clear_dist = clear_dist
-                best_clear_angle = angle
-
-        # If no unvisited cells found, go where there's the most open space
         if best_score <= 0:
-            return best_clear_angle, 1.0
+            # Completely boxed in — just pick forward
+            return robot_yaw, 1.0
 
+        total_clear = best_score  # approximate
         visited_ratio = 1.0 - (best_score / max(total_all, 1)) if total_all > 0 else 1.0
+        visited_ratio = max(0.0, min(1.0, visited_ratio))
         return best_angle, visited_ratio
 
     def get_coverage_stats(self):
@@ -405,12 +394,13 @@ class ObjectSearcher(Node):
             else:
                 self.back_min_distance = float('inf')
 
-            # Mark close obstacle points as wall cells in world coordinates
-            # Tighter height filter (0.15-1.0m) to avoid ground noise
-            # Only within stop_distance to avoid over-marking
+            # Mark obstacle points as wall cells in world coordinates
+            # Height filter (0.15-1.0m) to avoid ground noise
+            # Mark walls up to 3m (~10ft) away so planner sees them early
+            WALL_MARK_DISTANCE = 3.0
             if self.odom_received:
                 wall_mask = ((distances > LIDAR_MIN_DISTANCE) &
-                             (distances < self.stop_distance) &
+                             (distances < WALL_MARK_DISTANCE) &
                              (points[:, 2] > 0.15) &
                              (points[:, 2] < 1.0))
                 wall_pts = points[wall_mask]
