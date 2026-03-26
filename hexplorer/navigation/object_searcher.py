@@ -90,6 +90,17 @@ class VisitedAreaTracker:
         if self._block_hits[cell] >= self.WALL_HIT_THRESHOLD:
             self.blocked.add(cell)
 
+    def decay_blocked(self, seen_cells):
+        """Decay hit counts for blocked cells not seen this scan. Unblock if hits drop to 0."""
+        to_remove = []
+        for cell in list(self._block_hits.keys()):
+            if cell not in seen_cells:
+                self._block_hits[cell] -= 1
+                if self._block_hits[cell] <= 0:
+                    del self._block_hits[cell]
+                    self.blocked.discard(cell)
+                    to_remove.append(cell)
+
     def mark_camera_cone(self, robot_x, robot_y, robot_yaw,
                          half_angle=math.radians(15), min_dist=0.9, max_dist=3.0):
         """Mark cells visible in a forward-facing camera cone.
@@ -115,13 +126,17 @@ class VisitedAreaTracker:
                     self.visited.add(cell)
                 angle += arc_step
 
-    def get_best_direction(self, robot_x, robot_y, robot_yaw, num_dirs=16):
+    def get_best_direction(self, robot_x, robot_y, robot_yaw, num_dirs=16,
+                           exclude_angle=None, exclude_width=math.radians(45)):
         """Check num_dirs directions, return angle with most open space + unvisited cells.
 
         Rays terminate when they hit a blocked (wall) cell.
         Score = unvisited_cells + 0.1 * visited_cells (so open visited areas
-        always beat wall-blocked directions). This prevents the robot from
-        getting stuck when the only passable direction is already visited.
+        always beat wall-blocked directions).
+
+        Args:
+            exclude_angle: if set, directions within exclude_width of this angle
+                          get score zeroed (used when replanning away from a stuck direction)
         """
         best_angle = robot_yaw
         best_score = -1.0
@@ -131,6 +146,14 @@ class VisitedAreaTracker:
 
         for i in range(num_dirs):
             angle = robot_yaw + (2 * math.pi * i / num_dirs)
+
+            # Skip directions near the excluded angle
+            if exclude_angle is not None:
+                diff = abs(math.atan2(math.sin(angle - exclude_angle),
+                                      math.cos(angle - exclude_angle)))
+                if diff < exclude_width:
+                    continue
+
             unvisited = 0
             visited = 0
             for d_idx in range(1, int(ray_length / step) + 1):
@@ -158,7 +181,6 @@ class VisitedAreaTracker:
             # Completely boxed in — just pick forward
             return robot_yaw, 1.0
 
-        total_clear = best_score  # approximate
         visited_ratio = 1.0 - (best_score / max(total_all, 1)) if total_all > 0 else 1.0
         visited_ratio = max(0.0, min(1.0, visited_ratio))
         return best_angle, visited_ratio
@@ -404,6 +426,7 @@ class ObjectSearcher(Node):
                              (points[:, 2] > 0.15) &
                              (points[:, 2] < 1.0))
                 wall_pts = points[wall_mask]
+                seen_cells = set()
                 if len(wall_pts) > 0:
                     cos_yaw = math.cos(self.robot_yaw)
                     sin_yaw = math.sin(self.robot_yaw)
@@ -411,6 +434,11 @@ class ObjectSearcher(Node):
                         wx = self.robot_x + pt[0] * cos_yaw - pt[1] * sin_yaw
                         wy = self.robot_y + pt[0] * sin_yaw + pt[1] * cos_yaw
                         self.visited_tracker.mark_blocked(wx, wy)
+                        cell = (int(math.floor(wx / self.visited_tracker.cell_size)),
+                                int(math.floor(wy / self.visited_tracker.cell_size)))
+                        seen_cells.add(cell)
+                # Decay blocked cells not reinforced this scan
+                self.visited_tracker.decay_blocked(seen_cells)
 
             self.last_lidar_time = time.time()
 
@@ -618,12 +646,13 @@ class ObjectSearcher(Node):
                     self.nav_start_y = self.robot_y
                     self.nav_stuck_replans = 0
                 else:
-                    # Try replanning
+                    # Try replanning — exclude the direction that got us stuck
                     self.get_logger().info(
                         f'Stuck at wall ({self.nav_stuck_replans}/3), '
                         f'replanning away from {math.degrees(self.nav_target_angle):.0f} deg')
                     angle, visited_ratio = self.visited_tracker.get_best_direction(
-                        self.robot_x, self.robot_y, self.robot_yaw)
+                        self.robot_x, self.robot_y, self.robot_yaw,
+                        exclude_angle=self.nav_target_angle)
                     self.nav_target_angle = angle
                     self.nav_last_eval_time = now
                     self.get_logger().info(
@@ -659,7 +688,8 @@ class ObjectSearcher(Node):
                 self.nav_stuck_replans = 0
             else:
                 angle, visited_ratio = self.visited_tracker.get_best_direction(
-                    self.robot_x, self.robot_y, self.robot_yaw)
+                    self.robot_x, self.robot_y, self.robot_yaw,
+                    exclude_angle=self.nav_target_angle)
                 self.nav_target_angle = angle
                 self.get_logger().info(
                     f'No progress ({self.nav_stuck_replans}/3), '
