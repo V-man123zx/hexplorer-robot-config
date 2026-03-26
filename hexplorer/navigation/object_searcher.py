@@ -68,14 +68,20 @@ STATE_SHUTDOWN = 'SHUTDOWN'
 
 
 class VisitedAreaTracker:
-    """Grid-based coverage tracker for search planning."""
+    """Grid-based coverage tracker with wall awareness for search planning."""
 
     def __init__(self, cell_size=0.5):
         self.cell_size = cell_size
-        self.visited = set()  # {(grid_x, grid_y), ...}
+        self.visited = set()   # {(grid_x, grid_y), ...}
+        self.blocked = set()   # Cells with walls/obstacles (from LiDAR)
 
     def mark_visited(self, x, y):
         self.visited.add((int(math.floor(x / self.cell_size)),
+                          int(math.floor(y / self.cell_size))))
+
+    def mark_blocked(self, x, y):
+        """Mark a world-coordinate position as blocked (wall/obstacle)."""
+        self.blocked.add((int(math.floor(x / self.cell_size)),
                           int(math.floor(y / self.cell_size))))
 
     def mark_camera_cone(self, robot_x, robot_y, robot_yaw,
@@ -96,34 +102,46 @@ class VisitedAreaTracker:
             while angle <= half_angle:
                 px = robot_x + d * math.cos(robot_yaw + angle)
                 py = robot_y + d * math.sin(robot_yaw + angle)
-                self.visited.add((int(math.floor(px / self.cell_size)),
-                                  int(math.floor(py / self.cell_size))))
+                cell = (int(math.floor(px / self.cell_size)),
+                        int(math.floor(py / self.cell_size)))
+                # Don't mark blocked cells as visited (wall is still there)
+                if cell not in self.blocked:
+                    self.visited.add(cell)
                 angle += arc_step
 
-    def get_best_direction(self, robot_x, robot_y, robot_yaw, num_dirs=16):
-        """Check num_dirs directions, return angle with fewest visited cells along 6m ray."""
-        best_angle = robot_yaw  # Default: keep going forward
+    def get_best_direction(self, robot_x, robot_y, robot_yaw, num_dirs=16,
+                           blocked_angles=None):
+        """Check num_dirs directions, return angle with most reachable unvisited cells.
+
+        Rays terminate when they hit a blocked (wall) cell — can't see or travel through walls.
+        blocked_angles: set of direction indices to skip (used for stuck avoidance).
+        """
+        best_angle = robot_yaw
         best_score = -1
         ray_length = 6.0
         step = 0.25
+        total = 0
 
         for i in range(num_dirs):
+            if blocked_angles and i in blocked_angles:
+                continue
             angle = robot_yaw + (2 * math.pi * i / num_dirs)
             unvisited = 0
-            total = 0
             for d_idx in range(1, int(ray_length / step) + 1):
                 d = d_idx * step
                 px = robot_x + d * math.cos(angle)
                 py = robot_y + d * math.sin(angle)
                 gx = int(math.floor(px / self.cell_size))
                 gy = int(math.floor(py / self.cell_size))
+                # Wall hit — stop this ray, can't go further
+                if (gx, gy) in self.blocked:
+                    break
                 total += 1
                 if (gx, gy) not in self.visited:
                     unvisited += 1
 
-            score = unvisited
-            if score > best_score:
-                best_score = score
+            if unvisited > best_score:
+                best_score = unvisited
                 best_angle = angle
 
         visited_ratio = 1.0 - (best_score / max(total, 1)) if total > 0 else 1.0
@@ -229,6 +247,8 @@ class ObjectSearcher(Node):
         self.nav_target_angle = 0.0
         self.nav_last_eval_time = 0
         self.nav_eval_interval = 3.0  # Re-evaluate direction every 3 seconds
+        self.nav_obstacle_count = 0   # How many loops obstacle avoidance has been active
+        self.nav_obstacle_replan_threshold = 50  # ~2 seconds at 25Hz -> force replan
 
         # Found/Approach state
         self.found_start_time = 0
@@ -352,6 +372,20 @@ class ObjectSearcher(Node):
                 self.back_min_distance = np.percentile(back_distances, 10)
             else:
                 self.back_min_distance = float('inf')
+
+            # Mark obstacle points as blocked cells in world coordinates
+            # so the direction planner knows where walls are
+            if self.odom_received:
+                obstacle_mask = distances < self.slow_distance
+                obstacle_pts = points[obstacle_mask]
+                if len(obstacle_pts) > 0:
+                    cos_yaw = math.cos(self.robot_yaw)
+                    sin_yaw = math.sin(self.robot_yaw)
+                    for pt in obstacle_pts:
+                        # Transform from robot frame to world frame
+                        wx = self.robot_x + pt[0] * cos_yaw - pt[1] * sin_yaw
+                        wy = self.robot_y + pt[0] * sin_yaw + pt[1] * cos_yaw
+                        self.visited_tracker.mark_blocked(wx, wy)
 
             self.last_lidar_time = time.time()
 
@@ -492,8 +526,9 @@ class ObjectSearcher(Node):
         self.nav_start_x = self.scan_start_x
         self.nav_start_y = self.scan_start_y
         self.nav_last_eval_time = time.time()
+        self.nav_obstacle_count = 0
 
-        # Pick best direction
+        # Pick best direction (wall-aware)
         angle, visited_ratio = self.visited_tracker.get_best_direction(
             self.robot_x, self.robot_y, self.robot_yaw)
         self.nav_target_angle = angle
@@ -523,6 +558,7 @@ class ObjectSearcher(Node):
                 self.robot_x, self.robot_y, self.robot_yaw)
             self.nav_target_angle = angle
             self.nav_last_eval_time = now
+            self.nav_obstacle_count = 0  # Reset stuck counter on replan
 
         # Check front obstacle (proven pattern from obstacle_avoidance.py)
         lidar_fresh = (now - self.last_lidar_time) < 1.0
@@ -532,7 +568,25 @@ class ObjectSearcher(Node):
             vel.linear.x = 0.0
             turn_dir = -self.front_obstacle_side if self.front_obstacle_side != 0 else 1
             vel.angular.z = self.turn_speed * turn_dir
+
+            # Detect stuck loop: obstacle avoidance keeps firing
+            self.nav_obstacle_count += 1
+            if self.nav_obstacle_count >= self.nav_obstacle_replan_threshold:
+                # Wall ahead — force immediate replan excluding current direction
+                self.get_logger().info(
+                    f'Stuck at wall (obstacle for {self.nav_obstacle_count} cycles), '
+                    f'replanning away from {math.degrees(self.nav_target_angle):.0f} deg')
+                angle, visited_ratio = self.visited_tracker.get_best_direction(
+                    self.robot_x, self.robot_y, self.robot_yaw)
+                self.nav_target_angle = angle
+                self.nav_last_eval_time = now
+                self.nav_obstacle_count = 0
+                self.get_logger().info(
+                    f'New direction: {math.degrees(angle):.0f} deg '
+                    f'(visited ratio: {visited_ratio:.0%})')
             return vel
+        else:
+            self.nav_obstacle_count = 0
 
         if lidar_fresh and self.front_min_distance < self.slow_distance:
             # Slow zone - reduce speed
@@ -671,8 +725,12 @@ class ObjectSearcher(Node):
     # ─── Visualization ────────────────────────────────────────────────
 
     def _publish_visited_grid(self):
-        """Publish visited area as OccupancyGrid for RViz."""
-        if not self.visited_tracker.visited:
+        """Publish visited area as OccupancyGrid for RViz.
+
+        Values: -1 = unknown/unvisited, 0 = free/visited, 100 = blocked (wall)
+        """
+        all_cells = self.visited_tracker.visited | self.visited_tracker.blocked
+        if not all_cells:
             return
 
         grid = OccupancyGrid()
@@ -680,7 +738,7 @@ class ObjectSearcher(Node):
         grid.header.frame_id = 'odom'
         grid.info.resolution = self.visited_tracker.cell_size
 
-        cells = list(self.visited_tracker.visited)
+        cells = list(all_cells)
         min_x = min(c[0] for c in cells) - 2
         min_y = min(c[1] for c in cells) - 2
         max_x = max(c[0] for c in cells) + 2
@@ -692,14 +750,20 @@ class ObjectSearcher(Node):
         grid.info.origin.position.y = float(min_y * self.visited_tracker.cell_size)
         grid.info.origin.position.z = 0.0
 
-        # -1 = unknown/unvisited, 0 = free/visited
+        # -1 = unknown, 0 = visited/free, 100 = blocked/wall
         data = [-1] * (grid.info.width * grid.info.height)
-        for gx, gy in cells:
+        for gx, gy in self.visited_tracker.visited:
             col = gx - min_x
             row = gy - min_y
             idx = row * grid.info.width + col
             if 0 <= idx < len(data):
                 data[idx] = 0
+        for gx, gy in self.visited_tracker.blocked:
+            col = gx - min_x
+            row = gy - min_y
+            idx = row * grid.info.width + col
+            if 0 <= idx < len(data):
+                data[idx] = 100  # Walls show as dark in RViz
         grid.data = data
         self.visited_grid_pub.publish(grid)
 
