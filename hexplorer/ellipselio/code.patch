@@ -1,0 +1,65 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 0164f94..0946124 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -84,8 +84,16 @@ PLUGIN "ellipselio::MappingNode"
+ EXECUTABLE ellipselio_mapping_node
+ )
+ 
+-ament_auto_package(USE_SCOPED_HEADER_INSTALL_DIR INSTALL_TO_SHARE
+-launch
+-rviz
+-config
+-)
+\ No newline at end of file
++if(ROS_JAZZY)
++  ament_auto_package(USE_SCOPED_HEADER_INSTALL_DIR INSTALL_TO_SHARE
++  launch
++  rviz
++  config
++  )
++else()
++  ament_auto_package(INSTALL_TO_SHARE
++  launch
++  rviz
++  config
++  )
++endif()
+\ No newline at end of file
+diff --git a/src/lidar_processing.cpp b/src/lidar_processing.cpp
+index cc55d47..e36258d 100644
+--- a/src/lidar_processing.cpp
++++ b/src/lidar_processing.cpp
+@@ -249,7 +249,14 @@ void LidarProcess::SetMinMaxTime(int bin_idx) {
+ void LidarProcess::SetPoint(const LivoxPoint& in_pt0, const LivoxPoint& in_pt,
+                             EllipseLioPoint* out_pt, rclcpp::Time* point_time) {
+   out_pt->intensity = in_pt.intensity;
+-  *point_time = rclcpp::Time(in_pt.timestamp, RCL_ROS_TIME);
++  // Some Livox drivers/datasets provide an absolute per-point timestamp (ns).
++  // The robot's TCP bridge publishes XYZI only, so in_pt.timestamp is 0 — in
++  // that case keep the header-stamp-based point_time passed in (which already
++  // includes lidar_time_offset_). Overwriting it with Time(0) would place the
++  // scan at the epoch, before any IMU sample, so the EKF never initialises.
++  if (in_pt.timestamp > 1e9) {
++    *point_time = rclcpp::Time(in_pt.timestamp, RCL_ROS_TIME);
++  }
+ }
+ 
+ void LidarProcess::SetPoint(const VelodynePoint& in_pt0,
+@@ -316,6 +323,16 @@ void LidarProcess::PointCloudHandler(
+   for (size_t i = 0; i < num_points; i++) {
+     rclcpp::Time point_time = msg->header.stamp;
+     point_time += lidar_time_offset_;
++    // Robot's Livox bridge strips per-point timestamps. Synthesize an
++    // intra-frame offset from point order, spread backward over one frame
++    // period (1/rate s) so the scan ends at the header stamp (frame publish
++    // time) and has a realistic, non-zero duration for the EKF. Other sensor
++    // types apply their own per-point offsets in SetPoint, so leave them be.
++    if (static_cast<LidType>(params_.type) == LidType::kLivox &&
++        num_points > 1 && params_.rate > 0) {
++      double frac = static_cast<double>(i) / static_cast<double>(num_points - 1);
++      point_time += rclcpp::Duration::from_seconds((frac - 1.0) / params_.rate);
++    }
+     ConvertPoint<InPtType>(in_pc, i, point_time);
+     float range = sqrt(process_pc_->points[i].x * process_pc_->points[i].x +
+                        process_pc_->points[i].y * process_pc_->points[i].y +

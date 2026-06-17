@@ -1,0 +1,213 @@
+# EllipseLIO node log — live run 2026-06-18
+# NOTE: 11169 repetitive 'Failed to find match for field {tag,line,timestamp}' lines
+#       removed for readability (the robot's bridge ships XYZI only; deskew disabled).
+# ----------------------------------------------------------------------
+=== EllipseLIO live (mid360.yaml, RMW=cyclonedds, OMP=8) ===
+[1/5] Ensuring Jetson LiDAR + IMU services...
+  Checking Jetson LiDAR services...
+[jetson_services] LiDAR driver already running
+[jetson_services] TCP bridge already running
+[jetson_services] IMU TCP bridge already running
+[jetson_services] All services ready
+[2/5] Starting local LiDAR receiver...
+  livox_tcp_receiver already running
+[3/5] Starting local IMU receiver...
+  imu_tcp_receiver already running
+[4/5] Verifying /livox topics...
+average rate: 5.432
+	min: 0.175s max: 0.198s std dev: 0.00987s window: 3
+average rate: 5.428
+	min: 0.176s max: 0.200s std dev: 0.01118s window: 3
+average rate: 5.624
+	min: 0.177s max: 0.178s std dev: 0.00060s window: 3
+average rate: 5.675
+	min: 0.173s max: 0.178s std dev: 0.00206s window: 3
+  Warning: /livox/lidar not flowing yet
+average rate: 212.965
+	min: 0.003s max: 0.006s std dev: 0.00118s window: 3
+average rate: 191.023
+	min: 0.004s max: 0.006s std dev: 0.00077s window: 3
+average rate: 193.481
+	min: 0.004s max: 0.006s std dev: 0.00067s window: 3
+average rate: 199.654
+	min: 0.003s max: 0.010s std dev: 0.00330s window: 3
+average rate: 213.134
+	min: 0.004s max: 0.006s std dev: 0.00085s window: 3
+  Warning: /livox/imu not flowing yet
+[5/5] Launching EllipseLIO (rviz=true)...
+[INFO] [launch]: All log files can be found below /home/robot/.ros/log/2026-06-18-00-59-53-414621-minipc-2204-2164015
+[INFO] [launch]: Default logging verbosity is set to INFO
+[INFO] [component_container_mt-1]: process started with pid [2164280]
+[INFO] [rviz2-2]: process started with pid [2164284]
+[rviz2-2] [INFO] [1781715593.771811838] [rviz2]: Stereo is NOT SUPPORTED
+[rviz2-2] [INFO] [1781715593.771877062] [rviz2]: OpenGl version: 4.5 (GLSL 4.5)
+[component_container_mt-1] [INFO] [1781715593.790993630] [ellipselio_container]: Load Library: /home/robot/ellipselio_ws/install/ellipselio/lib/libellipselio_mapping.so
+[rviz2-2] [INFO] [1781715593.828033574] [rviz2]: Stereo is NOT SUPPORTED
+[component_container_mt-1] [INFO] [1781715593.839691530] [ellipselio_container]: Found class: rclcpp_components::NodeFactoryTemplate<ellipselio::MappingNode>
+[component_container_mt-1] [INFO] [1781715593.839807719] [ellipselio_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<ellipselio::MappingNode>
+[component_container_mt-1] [INFO] [1781715593.884185827] [ellipselio]: Node init finished.
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/ellipselio' in container 'ellipselio_container'
+[component_container_mt-1] [INFO] [1781715593.959438776] [ellipselio]: Waiting for data...
+[component_container_mt-1] [ERROR] [1781715593.959494342] [ellipselio]: Lidar has no new data
+[component_container_mt-1] [ERROR] [1781715594.134049703] [ellipselio]: IMU has no new data
+[component_container_mt-1] [ERROR] [1781715594.904332103] [ellipselio]: Lidar start time is before IMU start time
+[component_container_mt-1] [INFO] [1781715594.965261306] [ellipselio]: Waiting for data...
+[component_container_mt-1] [ERROR] [1781715594.965404751] [ellipselio]: Lidar has no new data
+[component_container_mt-1] Failed to find match for f[INFO] [1781716169.662830897] [imu_tcp_receiver]: Published 448000 IMU messages
+[INFO] [1781716170.664154543] [imu_tcp_receiver]: Published 448200 IMU messages
+[INFO] [1781716171.681287560] [imu_tcp_receiver]: Published 448400 IMU messages
+[INFO] [1781716172.582154423] [livox_tcp_receiver]: Received 13539 LiDAR frames
+[INFO] [1781716172.687512752] [imu_tcp_receiver]: Published 448600 IMU messages
+[INFO] [1781716173.662787432] [imu_tcp_receiver]: Published 448800 IMU messages
+[INFO] [1781716174.686568982] [imu_tcp_receiver]: Published 449000 IMU messages
+[INFO] [1781716175.663716672] [imu_tcp_receiver]: Published 449200 IMU messages
+[INFO] [1781716176.674084329] [imu_tcp_receiver]: Published 449400 IMU messages
+[INFO] [1781716177.578821197] [livox_tcp_receiver]: Received 13571 LiDAR frames
+[INFO] [1781716177.672407486] [imu_tcp_receiver]: Published 449600 IMU messages
+[INFO] [1781716178.672204269] [imu_tcp_receiver]: Published 449800 IMU messages
+[INFO] [1781716179.672317029] [imu_tcp_receiver]: Published 450000 IMU messages
+[INFO] [1781716180.677116112] [imu_tcp_receiver]: Published 450200 IMU messages
+[INFO] [1781716181.661332209] [imu_tcp_receiver]: Published 450400 IMU messages
+[INFO] [1781716182.589019030] [livox_tcp_receiver]: Received 13603 LiDAR frames
+[INFO] [1781716182.674247731] [imu_tcp_receiver]: Published 450600 IMU messages
+[INFO] [1781716183.670943020] [imu_tcp_receiver]: Published 450800 IMU messages
+[INFO] [1781716184.666656793] [imu_tcp_receiver]: Published 451000 IMU messages
+[INFO] [1781716185.680326570] [imu_tcp_receiver]: Published 451200 IMU messages
+[INFO] [1781716186.662011320] [imu_tcp_receiver]: Published 451400 IMU messages
+[INFO] [1781716187.579125228] [livox_tcp_receiver]: Received 13634 LiDAR frames
+[INFO] [1781716187.684112505] [imu_tcp_receiver]: Published 451600 IMU messages
+[INFO] [1781716188.676984624] [imu_tcp_receiver]: Published 451800 IMU messages
+[INFO] [1781716189.667578422] [imu_tcp_receiver]: Published 452000 IMU messages
+[INFO] [1781716190.683251371] [imu_tcp_receiver]: Published 452200 IMU messages
+[INFO] [1781716191.666181944] [imu_tcp_receiver]: Published 452400 IMU messages
+[INFO] [1781716192.581469751] [livox_tcp_receiver]: Received 13664 LiDAR frames
+[INFO] [1781716192.680845304] [imu_tcp_receiver]: Published 452600 IMU messages
+[INFO] [1781716193.682744379] [imu_tcp_receiver]: Published 452800 IMU messages
+[INFO] [1781716194.662395656] [imu_tcp_receiver]: Published 453000 IMU messages
+[INFO] [1781716195.678928705] [imu_tcp_receiver]: Published 453200 IMU messages
+[INFO] [1781716196.665016794] [imu_tcp_receiver]: Published 453400 IMU messages
+[INFO] [1781716197.579219096] [livox_tcp_receiver]: Received 13695 LiDAR frames
+[INFO] [1781716197.683676891] [imu_tcp_receiver]: Published 453600 IMU messages
+[INFO] [1781716198.675713569] [imu_tcp_receiver]: Published 453800 IMU messages
+[INFO] [1781716199.662616206] [imu_tcp_receiver]: Published 454000 IMU messages
+[INFO] [1781716200.676497792] [imu_tcp_receiver]: Published 454200 IMU messages
+[INFO] [1781716201.667288827] [imu_tcp_receiver]: Published 454400 IMU messages
+[INFO] [1781716202.579042209] [livox_tcp_receiver]: Received 13726 LiDAR frames
+[INFO] [1781716202.682319215] [imu_tcp_receiver]: Published 454600 IMU messages
+[INFO] [1781716203.664068964] [imu_tcp_receiver]: Published 454800 IMU messages
+[INFO] [1781716204.663213637] [imu_tcp_receiver]: Published 455000 IMU messages
+[INFO] [1781716205.688133315] [imu_tcp_receiver]: Published 455200 IMU messages
+[INFO] [1781716206.673815666] [imu_tcp_receiver]: Published 455400 IMU messages
+[INFO] [1781716207.578863794] [livox_tcp_receiver]: Received 13757 LiDAR frames
+[INFO] [1781716207.667075511] [imu_tcp_receiver]: Published 455600 IMU messages
+[INFO] [1781716208.663576009] [imu_tcp_receiver]: Published 455800 IMU messages
+[INFO] [1781716209.671543884] [imu_tcp_receiver]: Published 456000 IMU messages
+[INFO] [1781716210.668031289] [imu_tcp_receiver]: Published 456200 IMU messages
+[INFO] [1781716211.683327434] [imu_tcp_receiver]: Published 456400 IMU messages
+[INFO] [1781716212.578590080] [livox_tcp_receiver]: Received 13789 LiDAR frames
+[INFO] [1781716212.663649155] [imu_tcp_receiver]: Published 456600 IMU messages
+[INFO] [1781716213.676946595] [imu_tcp_receiver]: Published 456800 IMU messages
+[INFO] [1781716214.685896826] [imu_tcp_receiver]: Published 457000 IMU messages
+[INFO] [1781716215.663103406] [imu_tcp_receiver]: Published 457200 IMU messages
+[INFO] [1781716216.671992840] [imu_tcp_receiver]: Published 457400 IMU messages
+[INFO] [1781716217.578792923] [livox_tcp_receiver]: Received 13821 LiDAR frames
+[INFO] [1781716217.681557861] [imu_tcp_receiver]: Published 457600 IMU messages
+[INFO] [1781716218.662826580] [imu_tcp_receiver]: Published 457800 IMU messages
+[INFO] [1781716219.682198470] [imu_tcp_receiver]: Published 458000 IMU messages
+[INFO] [1781716220.686647701] [imu_tcp_receiver]: Published 458200 IMU messages
+[INFO] [1781716221.663179871] [imu_tcp_receiver]: Published 458400 IMU messages
+[INFO] [1781716222.583125856] [livox_tcp_receiver]: Received 13854 LiDAR frames
+[INFO] [1781716222.690499622] [imu_tcp_receiver]: Published 458600 IMU messages
+[INFO] [1781716223.683431126] [imu_tcp_receiver]: Published 458800 IMU messages
+[INFO] [1781716224.663178500] [imu_tcp_receiver]: Published 459000 IMU messages
+[INFO] [1781716225.673472945] [imu_tcp_receiver]: Published 459200 IMU messages
+[INFO] [1781716226.663265812] [imu_tcp_receiver]: Published 459400 IMU messages
+[INFO] [1781716227.580285776] [livox_tcp_receiver]: Received 13886 LiDAR frames
+[INFO] [1781716227.671234217] [imu_tcp_receiver]: Published 459600 IMU messages
+[INFO] [1781716228.672415475] [imu_tcp_receiver]: Published 459800 IMU messages
+[INFO] [1781716229.668212315] [imu_tcp_receiver]: Published 460000 IMU messages
+[INFO] [1781716230.675122604] [imu_tcp_receiver]: Published 460200 IMU messages
+[INFO] [1781716231.676089036] [imu_tcp_receiver]: Published 460400 IMU messages
+[INFO] [1781716232.578587214] [livox_tcp_receiver]: Received 13918 LiDAR frames
+[INFO] [1781716232.664730620] [imu_tcp_receiver]: Published 460600 IMU messages
+[INFO] [1781716233.665683290] [imu_tcp_receiver]: Published 460800 IMU messages
+[INFO] [1781716234.686583223] [imu_tcp_receiver]: Published 461000 IMU messages
+[INFO] [1781716235.667327102] [imu_tcp_receiver]: Published 461200 IMU messages
+[INFO] [1781716236.673319059] [imu_tcp_receiver]: Published 461400 IMU messages
+[INFO] [1781716237.579199770] [livox_tcp_receiver]: Received 13950 LiDAR frames
+[INFO] [1781716237.675562267] [imu_tcp_receiver]: Published 461600 IMU messages
+[INFO] [1781716238.664662332] [imu_tcp_receiver]: Published 461800 IMU messages
+[INFO] [1781716239.675042662] [imu_tcp_receiver]: Published 462000 IMU messages
+[INFO] [1781716240.663923544] [imu_tcp_receiver]: Published 462200 IMU messages
+[INFO] [1781716241.681159193] [imu_tcp_receiver]: Published 462400 IMU messages
+[INFO] [1781716242.578831183] [livox_tcp_receiver]: Received 13982 LiDAR frames
+[INFO] [1781716242.668083485] [imu_tcp_receiver]: Published 462600 IMU messages
+[INFO] [1781716243.667889293] [imu_tcp_receiver]: Published 462800 IMU messages
+[INFO] [1781716244.663948762] [imu_tcp_receiver]: Published 463000 IMU messages
+[INFO] [1781716245.665789386] [imu_tcp_receiver]: Published 463200 IMU messages
+[INFO] [1781716246.663913362] [imu_tcp_receiver]: Published 463400 IMU messages
+[INFO] [1781716247.578719324] [livox_tcp_receiver]: Received 14013 LiDAR frames
+[INFO] [1781716247.663799241] [imu_tcp_receiver]: Published 463600 IMU messages
+[INFO] [1781716248.663315074] [imu_tcp_receiver]: Published 463800 IMU messages
+[INFO] [1781716249.663569583] [imu_tcp_receiver]: Published 464000 IMU messages
+[INFO] [1781716250.663600443] [imu_tcp_receiver]: Published 464200 IMU messages
+[INFO] [1781716251.663561240] [imu_tcp_receiver]: Published 464400 IMU messages
+[INFO] [1781716252.578619485] [livox_tcp_receiver]: Received 14045 LiDAR frames
+[INFO] [1781716252.665172859] [imu_tcp_receiver]: Published 464600 IMU messages
+[INFO] [1781716253.664046304] [imu_tcp_receiver]: Published 464800 IMU messages
+[INFO] [1781716254.663757603] [imu_tcp_receiver]: Published 465000 IMU messages
+[INFO] [1781716255.663880989] [imu_tcp_receiver]: Published 465200 IMU messages
+[INFO] [1781716256.663682733] [imu_tcp_receiver]: Published 465400 IMU messages
+[INFO] [1781716257.578521437] [livox_tcp_receiver]: Received 14077 LiDAR frames
+[INFO] [1781716257.664013927] [imu_tcp_receiver]: Published 465600 IMU messages
+[INFO] [1781716258.663654146] [imu_tcp_receiver]: Published 465800 IMU messages
+[INFO] [1781716259.665405425] [imu_tcp_receiver]: Published 466000 IMU messages
+[INFO] [1781716260.664039448] [imu_tcp_receiver]: Published 466200 IMU messages
+[INFO] [1781716261.663784642] [imu_tcp_receiver]: Published 466400 IMU messages
+[INFO] [1781716262.578496406] [livox_tcp_receiver]: Received 14108 LiDAR frames
+[INFO] [1781716262.663994657] [imu_tcp_receiver]: Published 466600 IMU messages
+[INFO] [1781716263.664100060] [imu_tcp_receiver]: Published 466800 IMU messages
+[INFO] [1781716264.664387776] [imu_tcp_receiver]: Published 467000 IMU messages
+[INFO] [1781716265.664878178] [imu_tcp_receiver]: Published 467200 IMU messages
+[INFO] [1781716266.663798352] [imu_tcp_receiver]: Published 467400 IMU messages
+[INFO] [1781716267.578752451] [livox_tcp_receiver]: Received 14140 LiDAR frames
+[INFO] [1781716267.664134260] [imu_tcp_receiver]: Published 467600 IMU messages
+[INFO] [1781716268.664512904] [imu_tcp_receiver]: Published 467800 IMU messages
+[INFO] [1781716269.664363839] [imu_tcp_receiver]: Published 468000 IMU messages
+[INFO] [1781716270.665283221] [imu_tcp_receiver]: Published 468200 IMU messages
+[INFO] [1781716271.664428323] [imu_tcp_receiver]: Published 468400 IMU messages
+[INFO] [1781716272.580438605] [livox_tcp_receiver]: Received 14172 LiDAR frames
+[INFO] [1781716272.664104656] [imu_tcp_receiver]: Published 468600 IMU messages
+[INFO] [1781716273.673540397] [imu_tcp_receiver]: Published 468800 IMU messages
+[INFO] [1781716274.667700532] [imu_tcp_receiver]: Published 469000 IMU messages
+[INFO] [1781716275.664593374] [imu_tcp_receiver]: Published 469200 IMU messages
+[INFO] [1781716276.674443505] [imu_tcp_receiver]: Published 469400 IMU messages
+[INFO] [1781716277.579119946] [livox_tcp_receiver]: Received 14203 LiDAR frames
+[INFO] [1781716277.664600029] [imu_tcp_receiver]: Published 469600 IMU messages
+[INFO] [1781716278.664857446] [imu_tcp_receiver]: Published 469800 IMU messages
+[INFO] [1781716279.671643486] [imu_tcp_receiver]: Published 470000 IMU messages
+[INFO] [1781716280.664845147] [imu_tcp_receiver]: Published 470200 IMU messages
+[INFO] [1781716281.664332861] [imu_tcp_receiver]: Published 470400 IMU messages
+[INFO] [1781716282.578712342] [livox_tcp_receiver]: Received 14235 LiDAR frames
+[INFO] [1781716282.671787896] [imu_tcp_receiver]: Published 470600 IMU messages
+[INFO] [1781716283.665327239] [imu_tcp_receiver]: Published 470800 IMU messages
+[INFO] [1781716284.664912750] [imu_tcp_receiver]: Published 471000 IMU messages
+[INFO] [1781716285.678629039] [imu_tcp_receiver]: Published 471200 IMU messages
+[INFO] [1781716286.664844166] [imu_tcp_receiver]: Published 471400 IMU messages
+[INFO] [1781716287.594401261] [livox_tcp_receiver]: Received 14266 LiDAR frames
+[INFO] [1781716287.664730573] [imu_tcp_receiver]: Published 471600 IMU messages
+[INFO] [1781716288.665084872] [imu_tcp_receiver]: Published 471800 IMU messages
+[INFO] [1781716289.665231981] [imu_tcp_receiver]: Published 472000 IMU messages
+[INFO] [1781716290.664511945] [imu_tcp_receiver]: Published 472200 IMU messages
+[INFO] [1781716291.664597106] [imu_tcp_receiver]: Published 472400 IMU messages
+[INFO] [1781716292.578438722] [livox_tcp_receiver]: Received 14298 LiDAR frames
+[INFO] [1781716292.665307118] [imu_tcp_receiver]: Published 472600 IMU messages
+[INFO] [1781716293.665346259] [imu_tcp_receiver]: Published 472800 IMU messages
+[INFO] [1781716294.664902390] [imu_tcp_receiver]: Published 473000 IMU messages
+[INFO] [1781716295.665200056] [imu_tcp_receiver]: Published 473200 IMU messages
+[INFO] [1781716296.664998454] [imu_tcp_receiver]: Published 473400 IMU messages
+[INFO] [1781716297.578515779] [livox_tcp_receiver]: Received 14330 LiDAR frames
+[INFO] [1781716297.664930423] [imu_tcp_receiver]: Published 473600 IMU messages
+[INFO] [1781716298.665145283] [imu_tcp_receiver]: Published 473800 IMU messages
+Terminated
+Shutting down EllipseLIO...

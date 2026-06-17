@@ -1,0 +1,664 @@
+=========================================
+  Hexplorer Object Tracking System
+=========================================
+  MODE: FULL (robot will follow object)
+
+Tracking parameters:
+  - Detect mode:     yolo
+  - Target:          person
+  - Target distance: 900mm
+  - Max speed:       0.3 m/s
+  - Turn speed:      0.6 rad/s
+
+[1/4] Checking Jetson connectivity...
+  Jetson connected
+[2/4] Syncing tracker script to Jetson...
+[3/4] Ensuring object tracker on Jetson...
+  Starting object tracker on Jetson (mode: yolo, target: person)...
+  Waiting for YOLO model to load...
+[4/4] Starting detection receiver...
+  Starting detection_receiver...
+[WARN] [1781715630.285486228] [detection_receiver]: Connection refused, retrying in 2s...
+[INFO] [1781715630.285867108] [detection_receiver]: Detection Receiver starting...
+[INFO] [1781715630.286345878] [detection_receiver]: Connecting to Jetson at 192.168.1.20:9997
+[INFO] [1781715630.286760024] [detection_receiver]: Image streaming enabled, connecting to port 9996
+
+=========================================
+  Starting Robot Control
+=========================================
+Press Ctrl+C to stop (robot will sit down safely)
+
+[WARN] [1781715632.288059388] [detection_receiver]: Connection refused, retrying in 2s...
+[INFO] [1781715632.314574213] [object_follower]: Object Follower initialized
+[INFO] [1781715632.314836618] [object_follower]:   Target distance: 900mm
+[INFO] [1781715632.315019204] [object_follower]:   Max speed: 0.3 m/s
+[INFO] [1781715632.315183631] [object_follower]:   Turn speed: 0.6 rad/s
+[INFO] [1781715632.315464243] [object_follower]: Standing up...
+[INFO] [1781715632.315661082] [object_follower]:   State 1 (STANDDOWN)
+[INFO] [1781715634.267490352] [detection_receiver]: Connected to Jetson image stream!
+[INFO] [1781715634.298105839] [detection_receiver]: Connected to Jetson object tracker!
+[INFO] [1781715634.724126721] [object_follower]:   State 2 (STANDUP)
+[INFO] [1781715635.263306683] [detection_receiver]: Status: connected, Received: 6, Detections: 6, Images: 5 (connected)
+[INFO] [1781715637.046065709] [object_follower]:   State 3 (BALANCESTAND)
+[INFO] [1781715639.346330387] [object_follower]: Standing complete
+[INFO] [1781715639.346886230] [object_follower]: Following object - Ctrl+C to stop
+[INFO] [1781715639.347234189] [object_follower]: Waiting for detection data on /object_detection...
+[INFO] [1781715640.293847540] [detection_receiver]: Status: connected, Received: 39, Detections: 38, Images: 38 (connected)
+[INFO] [1781715640.505473562] [object_follower]: TRACK (no depth) err=+16px
+[INFO] [1781715641.736449262] [object_follower]: TRACK (no depth) err=-19px
+[INFO] [1781715642.969613438] [object_follower]: TRACK (no depth) err=-18px
+[INFO] [1781715644.166792120] [object_follower]: TRACK (no depth) err=-18px
+[INFO] [1781715645.263168387] [detection_receiver]: Status: connected, Received: 73, Detections: 72, Images: 72 (connected)
+[INFO] [1781715645.401996077] [object_follower]: TRACK (no depth) err=-16px
+[INFO] [1781715646.634174065] [object_follower]: TRACK (no depth) err=-16px
+[INFO] [1781715647.851499634] [object_follower]: TRACK (no depth) err=-17px
+[INFO] [1781715649.052932658] [object_follower]: TRACK (no depth) err=-15px
+[INFO] [1781715650.257964084] [object_follower]: TRACK (no depth) err=-12px
+[INFO] [1781715650.263222172] [detection_receiver]: Status: connected, Received: 107, Detections: 106, Images: 106 (connected)
+[INFO] [1781715651.481377915] [object_follower]: TRACK (no depth) err=-13px
+[INFO] [1781715652.691491141] [object_follower]: TRACK (no depth) err=-13px
+[INFO] [1781715653.922183509] [object_follower]: TRACK (no depth) err=-12px
+[INFO] [1781715655.157491694] [object_follower]: TRACK (no depth) err=-11px
+[INFO] [1781715655.268688510] [detection_receiver]: Status: connected, Received: 138, Detections: 137, Images: 137 (connected)
+[INFO] [1781715656.370945255] [object_follower]: TRACK (no depth) err=-10px
+[INFO] [1781715657.595687760] [object_follower]: TRACK (no depth) err=-8px
+[INFO] [1781715658.794285854] [object_follower]: FOLLOW dist=1499mm err=+229px
+[INFO] [1781715659.999771165] [object_follower]: FOLLOW dist=2977mm err=+84px
+[INFO] [1781715660.316095486] [detection_receiver]: Status: connected, Received: 172, Detections: 171, Images: 171 (connected)
+[INFO] [1781715661.229950584] [object_follower]: WAITING for detection
+[INFO] [1781715662.424825190] [object_follower]: TRACK (no depth) err=-11px
+[INFO] [1781715663.639374399] [object_follower]: TRACK (no depth) err=-113px
+[INFO] [1781715664.877480694] [object_follower]: TRACK (no depth) err=-90px
+[INFO] [1781715665.299788716] [detection_receiver]: Status: connected, Received: 206, Detections: 194, Images: 205 (connected)
+[INFO] [1781715666.109878001] [object_follower]: TRACK (no depth) err=+16px
+[INFO] [1781715667.333307781] [object_follower]: TRACK (no depth) err=+40px
+[INFO] [1781715668.550568889] [object_follower]: TRACK (no depth) err=+20px
+[INFO] [1781715669.770594418] [object_follower]: TRACK (no depth) err=+35px
+[INFO] [1781715670.318822106] [detection_receiver]: Status: connected, Received: 238, Detections: 226, Images: 237 (connected)
+[INFO] [1781715670.963122977] [object_follower]: TRACK (no depth) err=+41px
+[INFO] [1781715672.166586186] [object_follower]: TRACK (no depth) err=+35px
+[INFO] [1781715673.387179740] [object_follower]: TRACK (no depth) err=+45px
+[INFO] [1781715674.623652067] [object_follower]: TRACK (no depth) err=+41px
+[INFO] [1781715675.263608314] [detection_receiver]: Status: connected, Received: 272, Detections: 260, Images: 271 (connected)
+[INFO] [1781715675.821742222] [object_follower]: TRACK (no depth) err=+44px
+[INFO] [1781715677.033437944] [object_follower]: TRACK (no depth) err=+45px
+[INFO] [1781715678.224996351] [object_follower]: TRACK (no depth) err=+46px
+[INFO] [1781715679.444574633] [object_follower]: TRACK (no depth) err=+45px
+[INFO] [1781715680.263924443] [detection_receiver]: Status: connected, Received: 306, Detections: 292, Images: 305 (connected)
+[INFO] [1781715680.648169241] [object_follower]: FOLLOW dist=3406mm err=-289px
+[INFO] [1781715681.842183881] [object_follower]: BACKUP dist=565mm err=-233px
+[INFO] [1781715683.040188901] [object_follower]: WAITING for detection
+[INFO] [1781715684.244718859] [object_follower]: SLOW dist=1295mm err=-84px
+[INFO] [1781715685.317617189] [detection_receiver]: Status: connected, Received: 341, Detections: 316, Images: 340 (connected)
+[INFO] [1781715685.440961814] [object_follower]: FOLLOW dist=1863mm err=+69px
+[INFO] [1781715686.657401949] [object_follower]: FOLLOW dist=2167mm err=+36px
+[INFO] [1781715687.849323647] [object_follower]: FOLLOW dist=1954mm err=-1px
+[INFO] [1781715689.067789149] [object_follower]: SLOW dist=1388mm err=-84px
+[INFO] [1781715690.297056482] [object_follower]: SLOW dist=1303mm err=-66px
+[INFO] [1781715690.343476252] [detection_receiver]: Status: connected, Received: 375, Detections: 350, Images: 374 (connected)
+[INFO] [1781715691.497895202] [object_follower]: FOLLOW dist=2333mm err=-69px
+[INFO] [1781715692.691337559] [object_follower]: FOLLOW dist=4863mm err=-27px
+[INFO] [1781715693.905057563] [object_follower]: FOLLOW dist=4518mm err=-28px
+[INFO] [1781715695.126899506] [object_follower]: FOLLOW dist=3932mm err=-27px
+[INFO] [1781715695.305909220] [detection_receiver]: Status: connected, Received: 410, Detections: 384, Images: 408 (connected)
+[INFO] [1781715696.261276776] [object_follower]: WAITING for detection
+[INFO] [1781715697.418464128] [object_follower]: WAITING for detection
+[INFO] [1781715698.594535864] [object_follower]: WAITING for detection
+[INFO] [1781715699.745011752] [object_follower]: WAITING for detection
+[INFO] [1781715700.306458131] [detection_receiver]: Status: connected, Received: 468, Detections: 384, Images: 463 (connected)
+[INFO] [1781715700.906174407] [object_follower]: WAITING for detection
+[INFO] [1781715702.055027345] [object_follower]: WAITING for detection
+[INFO] [1781715703.209233025] [object_follower]: WAITING for detection
+[INFO] [1781715704.357277090] [object_follower]: WAITING for detection
+[INFO] [1781715705.274730014] [detection_receiver]: Status: connected, Received: 523, Detections: 384, Images: 518 (connected)
+[INFO] [1781715705.525428889] [object_follower]: WAITING for detection
+[INFO] [1781715706.673628598] [object_follower]: WAITING for detection
+[INFO] [1781715707.848271497] [object_follower]: SLOW dist=907mm err=+152px
+[INFO] [1781715709.020855502] [object_follower]: WAITING for detection
+[INFO] [1781715710.222694155] [object_follower]: WAITING for detection
+[INFO] [1781715710.333416714] [detection_receiver]: Status: connected, Received: 571, Detections: 398, Images: 570 (connected)
+[INFO] [1781715711.425347822] [object_follower]: WAITING for detection
+[INFO] [1781715712.624690376] [object_follower]: SLOW dist=1142mm err=-170px
+[INFO] [1781715713.825939882] [object_follower]: FOLLOW dist=1550mm err=+34px
+[INFO] [1781715715.036022128] [object_follower]: FOLLOW dist=1726mm err=-30px
+[INFO] [1781715715.298926896] [detection_receiver]: Status: connected, Received: 605, Detections: 423, Images: 604 (connected)
+[INFO] [1781715716.232370702] [object_follower]: FOLLOW dist=3284mm err=-101px
+[INFO] [1781715717.421797812] [object_follower]: SLOW dist=1062mm err=-7px
+[INFO] [1781715718.618292950] [object_follower]: WAITING for detection
+[INFO] [1781715719.832021002] [object_follower]: SLOW dist=1327mm err=-1px
+[INFO] [1781715720.263811260] [detection_receiver]: Status: connected, Received: 639, Detections: 448, Images: 638 (connected)
+[INFO] [1781715721.046767056] [object_follower]: WAITING for detection
+[INFO] [1781715722.242105220] [object_follower]: WAITING for detection
+[INFO] [1781715723.458885363] [object_follower]: SLOW dist=1261mm err=-25px
+[INFO] [1781715724.647550686] [object_follower]: WAITING for detection
+[INFO] [1781715725.263072600] [detection_receiver]: Status: connected, Received: 673, Detections: 469, Images: 672 (connected)
+[INFO] [1781715725.876869259] [object_follower]: HOLD dist=886mm err=-115px
+[INFO] [1781715727.100886250] [object_follower]: WAITING for detection
+[INFO] [1781715728.314365549] [object_follower]: SLOW dist=1223mm err=-113px
+[INFO] [1781715729.511419798] [object_follower]: SLOW dist=1385mm err=-4px
+[INFO] [1781715730.340185296] [detection_receiver]: Status: connected, Received: 706, Detections: 499, Images: 705 (connected)
+[INFO] [1781715730.713014251] [object_follower]: FOLLOW dist=1535mm err=-30px
+[INFO] [1781715731.914468527] [object_follower]: WAITING for detection
+[INFO] [1781715733.111096946] [object_follower]: FOLLOW dist=3884mm err=+37px
+[INFO] [1781715734.299807925] [object_follower]: FOLLOW dist=1779mm err=+81px
+[INFO] [1781715735.311744029] [detection_receiver]: Status: connected, Received: 741, Detections: 525, Images: 740 (connected)
+[INFO] [1781715735.510791349] [object_follower]: FOLLOW dist=1524mm err=+0px
+[INFO] [1781715736.715733465] [object_follower]: FOLLOW dist=3048mm err=-64px
+[INFO] [1781715737.965115057] [object_follower]: SLOW dist=1053mm err=-88px
+[INFO] [1781715739.174019324] [object_follower]: TRACK (no depth) err=-8px
+[INFO] [1781715740.279897290] [detection_receiver]: Status: connected, Received: 774, Detections: 558, Images: 772 (connected)
+[INFO] [1781715740.404858229] [object_follower]: FOLLOW dist=1499mm err=+46px
+[INFO] [1781715741.611099268] [object_follower]: SLOW dist=1237mm err=+28px
+[INFO] [1781715742.807438399] [object_follower]: FOLLOW dist=1789mm err=-61px
+[INFO] [1781715744.019677203] [object_follower]: SLOW dist=962mm err=-72px
+[INFO] [1781715745.221320666] [object_follower]: HOLD dist=774mm err=-264px
+[INFO] [1781715745.263199524] [detection_receiver]: Status: connected, Received: 808, Detections: 586, Images: 807 (connected)
+[INFO] [1781715746.416454036] [object_follower]: WAITING for detection
+[INFO] [1781715747.632139121] [object_follower]: FOLLOW dist=1726mm err=-269px
+[INFO] [1781715748.835783812] [object_follower]: FOLLOW dist=4219mm err=-76px
+[INFO] [1781715750.055525447] [object_follower]: TRACK (no depth) err=+8px
+[INFO] [1781715750.336814009] [detection_receiver]: Status: connected, Received: 840, Detections: 610, Images: 839 (connected)
+[INFO] [1781715751.262875332] [object_follower]: TRACK (no depth) err=+28px
+[INFO] [1781715752.495846573] [object_follower]: WAITING for detection
+[INFO] [1781715753.741480759] [object_follower]: WAITING for detection
+[INFO] [1781715754.947296024] [object_follower]: WAITING for detection
+[INFO] [1781715755.315072454] [detection_receiver]: Status: connected, Received: 873, Detections: 623, Images: 872 (connected)
+[INFO] [1781715756.170675695] [object_follower]: WAITING for detection
+[INFO] [1781715757.380837425] [object_follower]: WAITING for detection
+[INFO] [1781715758.583278461] [object_follower]: WAITING for detection
+[INFO] [1781715759.782504008] [object_follower]: WAITING for detection
+[INFO] [1781715760.263273886] [detection_receiver]: Status: connected, Received: 907, Detections: 623, Images: 906 (connected)
+[INFO] [1781715761.018067995] [object_follower]: WAITING for detection
+[INFO] [1781715762.217830168] [object_follower]: WAITING for detection
+[INFO] [1781715763.412247373] [object_follower]: WAITING for detection
+[INFO] [1781715764.630542235] [object_follower]: WAITING for detection
+[INFO] [1781715765.313089079] [detection_receiver]: Status: connected, Received: 940, Detections: 623, Images: 939 (connected)
+[INFO] [1781715765.855260281] [object_follower]: WAITING for detection
+[INFO] [1781715767.059107871] [object_follower]: WAITING for detection
+[INFO] [1781715768.287799694] [object_follower]: WAITING for detection
+[INFO] [1781715769.490481328] [object_follower]: WAITING for detection
+[INFO] [1781715770.263941436] [detection_receiver]: Status: connected, Received: 974, Detections: 623, Images: 973 (connected)
+[INFO] [1781715770.725222534] [object_follower]: WAITING for detection
+[INFO] [1781715771.926517535] [object_follower]: WAITING for detection
+[INFO] [1781715773.131123521] [object_follower]: TRACK (no depth) err=-212px
+[INFO] [1781715774.368411579] [object_follower]: TRACK (no depth) err=+66px
+[INFO] [1781715775.316395897] [detection_receiver]: Status: connected, Received: 1006, Detections: 636, Images: 1005 (connected)
+[INFO] [1781715775.580964145] [object_follower]: TRACK (no depth) err=+40px
+[INFO] [1781715776.782762707] [object_follower]: WAITING for detection
+[INFO] [1781715777.998317892] [object_follower]: WAITING for detection
+[INFO] [1781715779.232258398] [object_follower]: WAITING for detection
+[INFO] [1781715780.309778817] [detection_receiver]: Status: connected, Received: 1039, Detections: 644, Images: 1038 (connected)
+[INFO] [1781715780.440519917] [object_follower]: WAITING for detection
+[INFO] [1781715781.649403193] [object_follower]: WAITING for detection
+[INFO] [1781715782.842692480] [object_follower]: WAITING for detection
+[INFO] [1781715784.047360314] [object_follower]: WAITING for detection
+[INFO] [1781715785.263331305] [detection_receiver]: Status: connected, Received: 1072, Detections: 644, Images: 1071 (connected)
+[INFO] [1781715785.274254669] [object_follower]: WAITING for detection
+[INFO] [1781715786.485922286] [object_follower]: WAITING for detection
+[INFO] [1781715787.697006007] [object_follower]: WAITING for detection
+[INFO] [1781715788.941236055] [object_follower]: WAITING for detection
+[INFO] [1781715790.138694088] [object_follower]: WAITING for detection
+[INFO] [1781715790.329341350] [detection_receiver]: Status: connected, Received: 1105, Detections: 644, Images: 1104 (connected)
+[INFO] [1781715791.378781124] [object_follower]: WAITING for detection
+[INFO] [1781715792.613831938] [object_follower]: WAITING for detection
+[INFO] [1781715793.808586336] [object_follower]: WAITING for detection
+[INFO] [1781715795.005931270] [object_follower]: WAITING for detection
+[INFO] [1781715795.269115938] [detection_receiver]: Status: connected, Received: 1139, Detections: 644, Images: 1137 (connected)
+[INFO] [1781715796.233829895] [object_follower]: TRACK (no depth) err=+7px
+[INFO] [1781715797.432079880] [object_follower]: TRACK (no depth) err=-37px
+[INFO] [1781715798.666959807] [object_follower]: TRACK (no depth) err=-41px
+[INFO] [1781715799.892108387] [object_follower]: TRACK (no depth) err=-54px
+[INFO] [1781715800.286827690] [detection_receiver]: Status: connected, Received: 1171, Detections: 673, Images: 1170 (connected)
+[INFO] [1781715801.109079753] [object_follower]: TRACK (no depth) err=+39px
+[INFO] [1781715802.317983497] [object_follower]: FOLLOW dist=4006mm err=+56px
+[INFO] [1781715803.530300847] [object_follower]: FOLLOW dist=2665mm err=+89px
+[INFO] [1781715804.738476256] [object_follower]: TRACK (no depth) err=+148px
+[INFO] [1781715805.283980736] [detection_receiver]: Status: connected, Received: 1211, Detections: 705, Images: 1205 (connected)
+[INFO] [1781715805.881971510] [object_follower]: WAITING for detection
+[INFO] [1781715807.079131420] [object_follower]: WAITING for detection
+[INFO] [1781715808.292474577] [object_follower]: TRACK (no depth) err=+30px
+[INFO] [1781715809.524231301] [object_follower]: TRACK (no depth) err=+29px
+[INFO] [1781715810.278060759] [detection_receiver]: Status: connected, Received: 1246, Detections: 726, Images: 1245 (connected)
+[INFO] [1781715810.748359953] [object_follower]: TRACK (no depth) err=+23px
+[INFO] [1781715811.935392043] [object_follower]: TRACK (no depth) err=+34px
+[INFO] [1781715813.163657928] [object_follower]: TRACK (no depth) err=+50px
+[INFO] [1781715814.384255705] [object_follower]: WAITING for detection
+[INFO] [1781715815.280889445] [detection_receiver]: Status: connected, Received: 1280, Detections: 752, Images: 1279 (connected)
+[INFO] [1781715815.601205968] [object_follower]: WAITING for detection
+[INFO] [1781715816.828610243] [object_follower]: FOLLOW dist=3500mm err=+90px
+[INFO] [1781715818.051372557] [object_follower]: FOLLOW dist=2558mm err=-150px
+[INFO] [1781715819.257736496] [object_follower]: FOLLOW dist=3500mm err=-163px
+[INFO] [1781715820.263374329] [detection_receiver]: Status: connected, Received: 1314, Detections: 778, Images: 1314 (connected)
+[INFO] [1781715820.461396863] [object_follower]: TRACK (no depth) err=-171px
+[INFO] [1781715821.666237472] [object_follower]: FOLLOW dist=1745mm err=-65px
+[INFO] [1781715822.865373237] [object_follower]: FOLLOW dist=1400mm err=+1px
+[INFO] [1781715824.065582645] [object_follower]: SLOW dist=1118mm err=+1px
+[INFO] [1781715825.280658120] [object_follower]: SLOW dist=959mm err=+9px
+[INFO] [1781715825.291307319] [detection_receiver]: Status: connected, Received: 1347, Detections: 811, Images: 1346 (connected)
+[INFO] [1781715826.488691938] [object_follower]: HOLD dist=843mm err=+11px
+[INFO] [1781715827.694012229] [object_follower]: HOLD dist=864mm err=+12px
+[INFO] [1781715828.893874177] [object_follower]: FOLLOW dist=4247mm err=+62px
+[INFO] [1781715830.112109871] [object_follower]: FOLLOW dist=2518mm err=+5px
+[INFO] [1781715830.295043528] [detection_receiver]: Status: connected, Received: 1380, Detections: 844, Images: 1379 (connected)
+[INFO] [1781715831.335530019] [object_follower]: FOLLOW dist=3443mm err=+77px
+[INFO] [1781715832.539733953] [object_follower]: FOLLOW dist=3981mm err=+33px
+[INFO] [1781715833.747642913] [object_follower]: SLOW dist=1254mm err=-250px
+[INFO] [1781715834.956855520] [object_follower]: WAITING for detection
+[INFO] [1781715835.263273373] [detection_receiver]: Status: connected, Received: 1414, Detections: 877, Images: 1413 (connected)
+[INFO] [1781715836.167260852] [object_follower]: SLOW dist=1060mm err=-197px
+[INFO] [1781715837.375964549] [object_follower]: WAITING for detection
+[INFO] [1781715838.585415946] [object_follower]: FOLLOW dist=4083mm err=+43px
+[INFO] [1781715839.800487933] [object_follower]: FOLLOW dist=3619mm err=+50px
+[INFO] [1781715840.262971623] [detection_receiver]: Status: connected, Received: 1447, Detections: 906, Images: 1446 (connected)
+[INFO] [1781715841.003046030] [object_follower]: FOLLOW dist=3267mm err=+45px
+[INFO] [1781715842.205181322] [object_follower]: FOLLOW dist=2895mm err=+12px
+[INFO] [1781715843.406605404] [object_follower]: FOLLOW dist=2508mm err=+21px
+[INFO] [1781715844.622405606] [object_follower]: FOLLOW dist=2189mm err=+25px
+[INFO] [1781715845.262905879] [detection_receiver]: Status: connected, Received: 1480, Detections: 939, Images: 1479 (connected)
+[INFO] [1781715845.840353156] [object_follower]: FOLLOW dist=1799mm err=+31px
+[INFO] [1781715847.052898650] [object_follower]: SLOW dist=1223mm err=+40px
+[INFO] [1781715848.285663548] [object_follower]: SLOW dist=1370mm err=-9px
+[INFO] [1781715849.504106484] [object_follower]: WAITING for detection
+[INFO] [1781715850.314676763] [detection_receiver]: Status: connected, Received: 1513, Detections: 965, Images: 1512 (connected)
+[INFO] [1781715850.704399830] [object_follower]: SLOW dist=1046mm err=+27px
+[INFO] [1781715851.945265427] [object_follower]: WAITING for detection
+[INFO] [1781715853.192237664] [object_follower]: WAITING for detection
+[INFO] [1781715854.405371471] [object_follower]: WAITING for detection
+[INFO] [1781715855.262997984] [detection_receiver]: Status: connected, Received: 1547, Detections: 980, Images: 1546 (connected)
+[INFO] [1781715855.601511397] [object_follower]: WAITING for detection
+[INFO] [1781715856.826490354] [object_follower]: BACKUP dist=442mm err=+243px
+[INFO] [1781715858.020131694] [object_follower]: HOLD dist=705mm err=-93px
+[INFO] [1781715859.218891891] [object_follower]: HOLD dist=800mm err=-20px
+[INFO] [1781715860.299149071] [detection_receiver]: Status: connected, Received: 1581, Detections: 1012, Images: 1580 (connected)
+[INFO] [1781715860.420419169] [object_follower]: HOLD dist=826mm err=-97px
+[INFO] [1781715861.619192028] [object_follower]: HOLD dist=849mm err=+22px
+[INFO] [1781715862.848600244] [object_follower]: HOLD dist=831mm err=-34px
+[INFO] [1781715864.067549336] [object_follower]: HOLD dist=845mm err=+3px
+[INFO] [1781715865.297657043] [object_follower]: HOLD dist=803mm err=+177px
+[INFO] [1781715865.326771128] [detection_receiver]: Status: connected, Received: 1615, Detections: 1044, Images: 1614 (connected)
+[INFO] [1781715866.510370097] [object_follower]: HOLD dist=845mm err=-58px
+[INFO] [1781715867.727952816] [object_follower]: HOLD dist=852mm err=+225px
+[INFO] [1781715868.949239470] [object_follower]: HOLD dist=867mm err=-71px
+[INFO] [1781715870.154356175] [object_follower]: HOLD dist=868mm err=+74px
+[INFO] [1781715870.273179908] [detection_receiver]: Status: connected, Received: 1650, Detections: 1079, Images: 1648 (connected)
+[INFO] [1781715871.366702314] [object_follower]: HOLD dist=864mm err=+30px
+[INFO] [1781715872.572886875] [object_follower]: HOLD dist=887mm err=+80px
+[INFO] [1781715873.793269354] [object_follower]: SLOW dist=904mm err=+54px
+[INFO] [1781715875.003634364] [object_follower]: HOLD dist=857mm err=+63px
+[INFO] [1781715875.263407903] [detection_receiver]: Status: connected, Received: 1684, Detections: 1113, Images: 1683 (connected)
+[INFO] [1781715876.228204252] [object_follower]: HOLD dist=880mm err=-17px
+[INFO] [1781715877.447440819] [object_follower]: HOLD dist=874mm err=+130px
+[INFO] [1781715878.645333436] [object_follower]: SLOW dist=967mm err=+69px
+[INFO] [1781715879.844351567] [object_follower]: HOLD dist=873mm err=+143px
+[INFO] [1781715880.335840258] [detection_receiver]: Status: connected, Received: 1717, Detections: 1146, Images: 1716 (connected)
+[INFO] [1781715881.053163635] [object_follower]: HOLD dist=895mm err=-52px
+[INFO] [1781715882.269359652] [object_follower]: HOLD dist=834mm err=+204px
+[INFO] [1781715883.460094595] [object_follower]: HOLD dist=876mm err=-41px
+[INFO] [1781715884.660941358] [object_follower]: HOLD dist=863mm err=+128px
+[INFO] [1781715885.263299890] [detection_receiver]: Status: connected, Received: 1750, Detections: 1179, Images: 1749 (connected)
+[INFO] [1781715885.862892817] [object_follower]: HOLD dist=873mm err=-93px
+[INFO] [1781715887.059824744] [object_follower]: HOLD dist=856mm err=+210px
+[INFO] [1781715888.268691466] [object_follower]: WAITING for detection
+[INFO] [1781715889.481012989] [object_follower]: SLOW dist=1279mm err=+10px
+[INFO] [1781715890.267440491] [detection_receiver]: Status: connected, Received: 1780, Detections: 1204, Images: 1780 (connected)
+[INFO] [1781715890.687077727] [object_follower]: HOLD dist=723mm err=+205px
+[INFO] [1781715891.885368384] [object_follower]: HOLD dist=774mm err=-28px
+[INFO] [1781715893.109986170] [object_follower]: SLOW dist=1204mm err=-38px
+[INFO] [1781715894.344671041] [object_follower]: BACKUP dist=691mm err=-141px
+[INFO] [1781715895.262978069] [detection_receiver]: Status: connected, Received: 1814, Detections: 1236, Images: 1813 (connected)
+[INFO] [1781715895.560709512] [object_follower]: HOLD dist=845mm err=-65px
+[INFO] [1781715896.757168927] [object_follower]: HOLD dist=860mm err=+59px
+[INFO] [1781715897.988971986] [object_follower]: HOLD dist=864mm err=+0px
+[INFO] [1781715899.185572361] [object_follower]: HOLD dist=860mm err=+1px
+[INFO] [1781715900.332475742] [detection_receiver]: Status: connected, Received: 1847, Detections: 1269, Images: 1846 (connected)
+[INFO] [1781715900.380347426] [object_follower]: BACKUP dist=695mm err=+70px
+[INFO] [1781715901.578581217] [object_follower]: HOLD dist=820mm err=-9px
+[INFO] [1781715902.776412376] [object_follower]: FOLLOW dist=1539mm err=-41px
+[INFO] [1781715903.968777999] [object_follower]: BACKUP dist=690mm err=-23px
+[INFO] [1781715905.165301980] [object_follower]: HOLD dist=764mm err=-13px
+[INFO] [1781715905.263761583] [detection_receiver]: Status: connected, Received: 1881, Detections: 1300, Images: 1880 (connected)
+[INFO] [1781715906.384208440] [object_follower]: BACKUP dist=332mm err=+112px
+[INFO] [1781715907.569261530] [object_follower]: WAITING for detection
+[INFO] [1781715908.762893222] [object_follower]: BACKUP dist=457mm err=-41px
+[INFO] [1781715909.956961433] [object_follower]: BACKUP dist=636mm err=-39px
+[INFO] [1781715910.265468897] [detection_receiver]: Status: connected, Received: 1916, Detections: 1326, Images: 1915 (connected)
+[INFO] [1781715911.167499618] [object_follower]: BACKUP dist=690mm err=-12px
+[INFO] [1781715912.392301822] [object_follower]: BACKUP dist=640mm err=+86px
+[INFO] [1781715913.619991163] [object_follower]: HOLD dist=712mm err=-7px
+[INFO] [1781715914.840203921] [object_follower]: BACKUP dist=666mm err=-55px
+[INFO] [1781715915.263500385] [detection_receiver]: Status: connected, Received: 1950, Detections: 1360, Images: 1949 (connected)
+[INFO] [1781715916.050782868] [object_follower]: BACKUP dist=628mm err=+32px
+[INFO] [1781715917.255333614] [object_follower]: HOLD dist=773mm err=+14px
+[INFO] [1781715918.477909871] [object_follower]: BACKUP dist=631mm err=+59px
+[INFO] [1781715919.696771368] [object_follower]: HOLD dist=751mm err=-72px
+[INFO] [1781715920.263950974] [detection_receiver]: Status: connected, Received: 1984, Detections: 1394, Images: 1983 (connected)
+[INFO] [1781715920.909137250] [object_follower]: SLOW dist=955mm err=-167px
+[INFO] [1781715922.119699799] [object_follower]: WAITING for detection
+[INFO] [1781715923.345776287] [object_follower]: WAITING for detection
+[INFO] [1781715924.555504620] [object_follower]: WAITING for detection
+[INFO] [1781715925.263982996] [detection_receiver]: Status: connected, Received: 2017, Detections: 1415, Images: 2016 (connected)
+[INFO] [1781715925.763710461] [object_follower]: TRACK (no depth) err=+24px
+[INFO] [1781715926.991168756] [object_follower]: FOLLOW dist=1820mm err=+17px
+[INFO] [1781715928.203367413] [object_follower]: FOLLOW dist=1448mm err=+25px
+[INFO] [1781715929.398092861] [object_follower]: SLOW dist=1162mm err=+34px
+[INFO] [1781715930.264777434] [detection_receiver]: Status: connected, Received: 2050, Detections: 1448, Images: 2049 (connected)
+[INFO] [1781715930.631003388] [object_follower]: SLOW dist=1002mm err=+45px
+[INFO] [1781715931.850247630] [object_follower]: HOLD dist=846mm err=-4px
+[INFO] [1781715933.079250991] [object_follower]: HOLD dist=845mm err=+3px
+[INFO] [1781715934.291333884] [object_follower]: WAITING for detection
+[INFO] [1781715935.310307644] [detection_receiver]: Status: connected, Received: 2083, Detections: 1469, Images: 2082 (connected)
+[INFO] [1781715935.476369294] [object_follower]: WAITING for detection
+[INFO] [1781715936.707099383] [object_follower]: HOLD dist=857mm err=+14px
+[INFO] [1781715937.922562289] [object_follower]: HOLD dist=860mm err=+21px
+[INFO] [1781715939.139215537] [object_follower]: WAITING for detection
+[INFO] [1781715940.274039356] [detection_receiver]: Status: connected, Received: 2116, Detections: 1491, Images: 2114 (connected)
+[INFO] [1781715940.336589341] [object_follower]: WAITING for detection
+[INFO] [1781715941.550567245] [object_follower]: HOLD dist=847mm err=-40px
+[INFO] [1781715942.759686047] [object_follower]: HOLD dist=849mm err=-55px
+[INFO] [1781715943.968291638] [object_follower]: TRACK (no depth) err=+189px
+[INFO] [1781715945.187609536] [object_follower]: FOLLOW dist=4455mm err=-150px
+[INFO] [1781715945.357267075] [detection_receiver]: Status: connected, Received: 2147, Detections: 1512, Images: 2146 (connected)
+[INFO] [1781715946.389649229] [object_follower]: SLOW dist=1338mm err=-116px
+[INFO] [1781715947.604639328] [object_follower]: FOLLOW dist=1745mm err=-68px
+[INFO] [1781715948.816394665] [object_follower]: FOLLOW dist=1712mm err=-60px
+[INFO] [1781715950.026203597] [object_follower]: FOLLOW dist=1659mm err=-63px
+[INFO] [1781715950.266384514] [detection_receiver]: Status: connected, Received: 2179, Detections: 1544, Images: 2178 (connected)
+[INFO] [1781715951.250176520] [object_follower]: FOLLOW dist=1726mm err=-48px
+[INFO] [1781715952.449939626] [object_follower]: FOLLOW dist=3146mm err=-22px
+[INFO] [1781715953.690910989] [object_follower]: FOLLOW dist=2283mm err=-97px
+[INFO] [1781715954.893036152] [object_follower]: FOLLOW dist=2758mm err=-60px
+[INFO] [1781715955.266405949] [detection_receiver]: Status: connected, Received: 2212, Detections: 1577, Images: 2211 (connected)
+[INFO] [1781715956.110453146] [object_follower]: FOLLOW dist=3092mm err=-29px
+[INFO] [1781715957.325947811] [object_follower]: FOLLOW dist=3462mm err=-54px
+[INFO] [1781715958.539475441] [object_follower]: FOLLOW dist=4032mm err=-12px
+[INFO] [1781715959.740816443] [object_follower]: FOLLOW dist=4393mm err=-40px
+[INFO] [1781715960.316578379] [detection_receiver]: Status: connected, Received: 2244, Detections: 1609, Images: 2243 (connected)
+[INFO] [1781715960.954890997] [object_follower]: FOLLOW dist=4900mm err=-54px
+[INFO] [1781715962.173723688] [object_follower]: TRACK (no depth) err=-13px
+[INFO] [1781715963.387672736] [object_follower]: TRACK (no depth) err=+12px
+[INFO] [1781715964.592470916] [object_follower]: FOLLOW dist=4900mm err=+26px
+[INFO] [1781715965.336633885] [detection_receiver]: Status: connected, Received: 2277, Detections: 1642, Images: 2276 (connected)
+[INFO] [1781715965.806118892] [object_follower]: FOLLOW dist=3908mm err=+34px
+[INFO] [1781715967.011788960] [object_follower]: FOLLOW dist=3318mm err=+29px
+[INFO] [1781715968.210628447] [object_follower]: FOLLOW dist=3388mm err=-160px
+[INFO] [1781715969.426917086] [object_follower]: FOLLOW dist=2351mm err=-150px
+[INFO] [1781715970.263848089] [detection_receiver]: Status: connected, Received: 2310, Detections: 1675, Images: 2309 (connected)
+[INFO] [1781715970.647774717] [object_follower]: FOLLOW dist=2189mm err=+91px
+[INFO] [1781715971.840823205] [object_follower]: FOLLOW dist=2220mm err=-12px
+[INFO] [1781715973.067599988] [object_follower]: FOLLOW dist=2621mm err=-61px
+[INFO] [1781715974.283843902] [object_follower]: FOLLOW dist=2991mm err=-35px
+[INFO] [1781715975.263521817] [detection_receiver]: Status: connected, Received: 2344, Detections: 1708, Images: 2343 (connected)
+[INFO] [1781715975.517484294] [object_follower]: FOLLOW dist=4518mm err=-92px
+[INFO] [1781715976.742805494] [object_follower]: FOLLOW dist=2882mm err=-61px
+[INFO] [1781715977.962797893] [object_follower]: FOLLOW dist=2936mm err=-12px
+[INFO] [1781715979.175192556] [object_follower]: FOLLOW dist=2600mm err=-31px
+[INFO] [1781715980.331707146] [detection_receiver]: Status: connected, Received: 2376, Detections: 1739, Images: 2375 (connected)
+[INFO] [1781715980.371944256] [object_follower]: FOLLOW dist=2220mm err=-26px
+[INFO] [1781715981.573154671] [object_follower]: WAITING for detection
+[INFO] [1781715982.792531645] [object_follower]: FOLLOW dist=2055mm err=-48px
+[INFO] [1781715984.027027358] [object_follower]: FOLLOW dist=2174mm err=+16px
+[INFO] [1781715985.236837586] [object_follower]: FOLLOW dist=2308mm err=-68px
+[INFO] [1781715985.263874775] [detection_receiver]: Status: connected, Received: 2410, Detections: 1763, Images: 2409 (connected)
+[INFO] [1781715986.451119469] [object_follower]: FOLLOW dist=2075mm err=-56px
+[INFO] [1781715987.673182908] [object_follower]: FOLLOW dist=2197mm err=-77px
+[INFO] [1781715988.893982589] [object_follower]: FOLLOW dist=2102mm err=+27px
+[INFO] [1781715990.088366483] [object_follower]: FOLLOW dist=1502mm err=+35px
+[INFO] [1781715990.317013602] [detection_receiver]: Status: connected, Received: 2443, Detections: 1796, Images: 2442 (connected)
+[INFO] [1781715991.290422235] [object_follower]: SLOW dist=1244mm err=+48px
+[INFO] [1781715992.501743197] [object_follower]: SLOW dist=1065mm err=+191px
+[INFO] [1781715993.704115612] [object_follower]: FOLLOW dist=3661mm err=-283px
+[INFO] [1781715994.895482266] [object_follower]: FOLLOW dist=2977mm err=+100px
+[INFO] [1781715995.265156359] [detection_receiver]: Status: connected, Received: 2476, Detections: 1829, Images: 2475 (connected)
+[INFO] [1781715996.096676424] [object_follower]: BACKUP dist=602mm err=-101px
+[INFO] [1781715997.283021193] [object_follower]: HOLD dist=875mm err=+11px
+[INFO] [1781715998.479214536] [object_follower]: FOLLOW dist=3005mm err=-69px
+[INFO] [1781715999.687881313] [object_follower]: HOLD dist=767mm err=+42px
+[INFO] [1781716000.265067416] [detection_receiver]: Status: connected, Received: 2511, Detections: 1864, Images: 2510 (connected)
+[INFO] [1781716000.880478622] [object_follower]: WAITING for detection
+[INFO] [1781716002.022838861] [object_follower]: TRACK (no depth) err=-30px
+[INFO] [1781716003.179185443] [object_follower]: WAITING for detection
+[INFO] [1781716004.360344130] [object_follower]: WAITING for detection
+[INFO] [1781716005.263434720] [detection_receiver]: Status: connected, Received: 2561, Detections: 1891, Images: 2560 (connected)
+[INFO] [1781716005.560904093] [object_follower]: SLOW dist=971mm err=-5px
+[INFO] [1781716006.756661041] [object_follower]: HOLD dist=882mm err=-23px
+[INFO] [1781716007.964685262] [object_follower]: HOLD dist=882mm err=-28px
+[INFO] [1781716009.157361816] [object_follower]: SLOW dist=1303mm err=-23px
+[INFO] [1781716010.286037214] [detection_receiver]: Status: connected, Received: 2595, Detections: 1925, Images: 2594 (connected)
+[INFO] [1781716010.347382239] [object_follower]: FOLLOW dist=3267mm err=+51px
+[INFO] [1781716011.546549932] [object_follower]: SLOW dist=1144mm err=-29px
+[INFO] [1781716012.743422942] [object_follower]: TRACK (no depth) err=+8px
+[INFO] [1781716013.929950093] [object_follower]: FOLLOW dist=1879mm err=+105px
+[INFO] [1781716015.141712059] [object_follower]: FOLLOW dist=1846mm err=+2px
+[INFO] [1781716015.335779006] [detection_receiver]: Status: connected, Received: 2630, Detections: 1959, Images: 2629 (connected)
+[INFO] [1781716016.343182013] [object_follower]: FOLLOW dist=1650mm err=+16px
+[INFO] [1781716017.542359494] [object_follower]: FOLLOW dist=2116mm err=-46px
+[INFO] [1781716018.739683162] [object_follower]: FOLLOW dist=2174mm err=-30px
+[INFO] [1781716019.961152951] [object_follower]: FOLLOW dist=2022mm err=-44px
+[INFO] [1781716020.301382191] [detection_receiver]: Status: connected, Received: 2663, Detections: 1987, Images: 2662 (connected)
+[INFO] [1781716021.169293556] [object_follower]: FOLLOW dist=1712mm err=-69px
+[INFO] [1781716022.364013857] [object_follower]: FOLLOW dist=1642mm err=-71px
+[INFO] [1781716023.573228373] [object_follower]: FOLLOW dist=1650mm err=-11px
+[INFO] [1781716024.792818748] [object_follower]: FOLLOW dist=1569mm err=-68px
+[INFO] [1781716025.264286953] [detection_receiver]: Status: connected, Received: 2697, Detections: 2021, Images: 2696 (connected)
+[INFO] [1781716026.027672821] [object_follower]: FOLLOW dist=1646mm err=-71px
+[INFO] [1781716027.230355515] [object_follower]: FOLLOW dist=1750mm err=-81px
+[INFO] [1781716028.429663376] [object_follower]: FOLLOW dist=1942mm err=-22px
+[INFO] [1781716029.656180867] [object_follower]: FOLLOW dist=2068mm err=-64px
+[INFO] [1781716030.263371842] [detection_receiver]: Status: connected, Received: 2730, Detections: 2054, Images: 2729 (connected)
+[INFO] [1781716030.865204834] [object_follower]: FOLLOW dist=2003mm err=+1px
+[INFO] [1781716032.086801992] [object_follower]: FOLLOW dist=1690mm err=-3px
+[INFO] [1781716033.303462768] [object_follower]: SLOW dist=1297mm err=-2px
+[INFO] [1781716034.516521772] [object_follower]: SLOW dist=1135mm err=+5px
+[INFO] [1781716035.267091660] [detection_receiver]: Status: connected, Received: 2763, Detections: 2087, Images: 2762 (connected)
+[INFO] [1781716035.712838252] [object_follower]: SLOW dist=925mm err=+15px
+[INFO] [1781716036.907095562] [object_follower]: HOLD dist=844mm err=+17px
+[INFO] [1781716038.119191819] [object_follower]: WAITING for detection
+[INFO] [1781716039.317467046] [object_follower]: HOLD dist=841mm err=+27px
+[INFO] [1781716040.263139585] [detection_receiver]: Status: connected, Received: 2796, Detections: 2106, Images: 2795 (connected)
+[INFO] [1781716040.549004098] [object_follower]: HOLD dist=885mm err=+38px
+[INFO] [1781716041.744260031] [object_follower]: SLOW dist=1282mm err=+13px
+[INFO] [1781716042.949544309] [object_follower]: SLOW dist=1397mm err=-153px
+[INFO] [1781716044.149755564] [object_follower]: FOLLOW dist=1638mm err=-79px
+[INFO] [1781716045.263206342] [detection_receiver]: Status: connected, Received: 2829, Detections: 2139, Images: 2828 (connected)
+[INFO] [1781716045.355525110] [object_follower]: FOLLOW dist=1573mm err=+24px
+[INFO] [1781716046.578796460] [object_follower]: SLOW dist=1197mm err=+36px
+[INFO] [1781716047.789479618] [object_follower]: SLOW dist=1100mm err=+36px
+[INFO] [1781716048.988343682] [object_follower]: TRACK (no depth) err=+16px
+[INFO] [1781716050.183104766] [object_follower]: TRACK (no depth) err=+25px
+[INFO] [1781716050.267345904] [detection_receiver]: Status: connected, Received: 2861, Detections: 2171, Images: 2861 (connected)
+[INFO] [1781716051.382106810] [object_follower]: TRACK (no depth) err=+30px
+[INFO] [1781716052.590607251] [object_follower]: SLOW dist=1006mm err=+41px
+[INFO] [1781716053.791272345] [object_follower]: TRACK (no depth) err=+50px
+[INFO] [1781716055.025761286] [object_follower]: TRACK (no depth) err=+37px
+[INFO] [1781716055.263176381] [detection_receiver]: Status: connected, Received: 2895, Detections: 2201, Images: 2894 (connected)
+[INFO] [1781716056.230821152] [object_follower]: TRACK (no depth) err=-13px
+[INFO] [1781716057.468096510] [object_follower]: TRACK (no depth) err=-8px
+[INFO] [1781716058.684177582] [object_follower]: TRACK (no depth) err=-1px
+[INFO] [1781716059.900677153] [object_follower]: WAITING for detection
+[INFO] [1781716060.336822856] [detection_receiver]: Status: connected, Received: 2927, Detections: 2216, Images: 2926 (connected)
+[INFO] [1781716061.105144257] [object_follower]: WAITING for detection
+[INFO] [1781716062.349102388] [object_follower]: TRACK (no depth) err=+16px
+[INFO] [1781716063.564040606] [object_follower]: WAITING for detection
+[INFO] [1781716064.787436367] [object_follower]: TRACK (no depth) err=+26px
+[INFO] [1781716065.266511391] [detection_receiver]: Status: connected, Received: 2960, Detections: 2243, Images: 2959 (connected)
+[INFO] [1781716065.996501239] [object_follower]: TRACK (no depth) err=+37px
+[INFO] [1781716067.210515783] [object_follower]: WAITING for detection
+[INFO] [1781716068.413416980] [object_follower]: WAITING for detection
+[INFO] [1781716069.618062524] [object_follower]: WAITING for detection
+[INFO] [1781716070.318394994] [detection_receiver]: Status: connected, Received: 2992, Detections: 2254, Images: 2991 (connected)
+[INFO] [1781716070.838653944] [object_follower]: HOLD dist=799mm err=-143px
+[INFO] [1781716072.050706865] [object_follower]: SLOW dist=1087mm err=+25px
+[INFO] [1781716073.262434737] [object_follower]: SLOW dist=983mm err=+54px
+[INFO] [1781716074.489767878] [object_follower]: SLOW dist=906mm err=-21px
+[INFO] [1781716075.264137294] [detection_receiver]: Status: connected, Received: 3025, Detections: 2282, Images: 3024 (connected)
+[INFO] [1781716075.698341770] [object_follower]: WAITING for detection
+[INFO] [1781716076.898502267] [object_follower]: HOLD dist=866mm err=-11px
+[INFO] [1781716078.088635788] [object_follower]: HOLD dist=871mm err=-11px
+[INFO] [1781716079.276799416] [object_follower]: WAITING for detection
+[INFO] [1781716080.339061099] [detection_receiver]: Status: connected, Received: 3058, Detections: 2306, Images: 3057 (connected)
+[INFO] [1781716080.474522972] [object_follower]: HOLD dist=866mm err=+5px
+[INFO] [1781716081.704960203] [object_follower]: TRACK (no depth) err=+3px
+[INFO] [1781716082.903926357] [object_follower]: TRACK (no depth) err=+5px
+[INFO] [1781716084.107645490] [object_follower]: SLOW dist=1379mm err=+6px
+[INFO] [1781716085.288767432] [detection_receiver]: Status: connected, Received: 3091, Detections: 2335, Images: 3090 (connected)
+[INFO] [1781716085.297704221] [object_follower]: WAITING for detection
+[INFO] [1781716086.488352532] [object_follower]: WAITING for detection
+[INFO] [1781716087.704403667] [object_follower]: WAITING for detection
+[INFO] [1781716088.905347712] [object_follower]: WAITING for detection
+[INFO] [1781716090.108189347] [object_follower]: WAITING for detection
+[INFO] [1781716090.264967306] [detection_receiver]: Status: connected, Received: 3125, Detections: 2335, Images: 3124 (connected)
+[INFO] [1781716091.305944332] [object_follower]: WAITING for detection
+[INFO] [1781716092.521349986] [object_follower]: WAITING for detection
+[INFO] [1781716093.715029335] [object_follower]: WAITING for detection
+[INFO] [1781716094.955229605] [object_follower]: WAITING for detection
+[INFO] [1781716095.311952050] [detection_receiver]: Status: connected, Received: 3157, Detections: 2335, Images: 3156 (connected)
+[INFO] [1781716096.185845263] [object_follower]: WAITING for detection
+[INFO] [1781716097.400979806] [object_follower]: WAITING for detection
+[INFO] [1781716098.615406897] [object_follower]: WAITING for detection
+[INFO] [1781716099.842808027] [object_follower]: HOLD dist=709mm err=+62px
+[INFO] [1781716100.292755152] [detection_receiver]: Status: connected, Received: 3191, Detections: 2340, Images: 3190 (connected)
+[INFO] [1781716101.047777261] [object_follower]: WAITING for detection
+[INFO] [1781716102.259369975] [object_follower]: WAITING for detection
+[INFO] [1781716103.468365267] [object_follower]: HOLD dist=744mm err=+28px
+[INFO] [1781716104.674544740] [object_follower]: WAITING for detection
+[INFO] [1781716105.279880506] [detection_receiver]: Status: connected, Received: 3224, Detections: 2348, Images: 3222 (connected)
+[INFO] [1781716105.888994269] [object_follower]: TRACK (no depth) err=-21px
+[INFO] [1781716107.086414587] [object_follower]: TRACK (no depth) err=-19px
+[INFO] [1781716108.279918883] [object_follower]: TRACK (no depth) err=-12px
+[INFO] [1781716109.501147586] [object_follower]: TRACK (no depth) err=-10px
+[INFO] [1781716110.299995470] [detection_receiver]: Status: connected, Received: 3257, Detections: 2376, Images: 3256 (connected)
+[INFO] [1781716110.701139904] [object_follower]: WAITING for detection
+[INFO] [1781716111.927589431] [object_follower]: HOLD dist=744mm err=+24px
+[INFO] [1781716113.143324895] [object_follower]: TRACK (no depth) err=+37px
+[INFO] [1781716114.347834034] [object_follower]: WAITING for detection
+[INFO] [1781716115.263476061] [detection_receiver]: Status: connected, Received: 3291, Detections: 2391, Images: 3290 (connected)
+[INFO] [1781716115.550584493] [object_follower]: WAITING for detection
+[INFO] [1781716116.738962255] [object_follower]: WAITING for detection
+[INFO] [1781716117.944514041] [object_follower]: WAITING for detection
+[INFO] [1781716119.155005590] [object_follower]: WAITING for detection
+[INFO] [1781716120.308811927] [detection_receiver]: Status: connected, Received: 3325, Detections: 2391, Images: 3324 (connected)
+[INFO] [1781716120.351641508] [object_follower]: WAITING for detection
+[INFO] [1781716121.560553827] [object_follower]: WAITING for detection
+[INFO] [1781716122.774589848] [object_follower]: WAITING for detection
+[INFO] [1781716123.983525727] [object_follower]: WAITING for detection
+[INFO] [1781716125.195540036] [object_follower]: WAITING for detection
+[INFO] [1781716125.262948081] [detection_receiver]: Status: connected, Received: 3359, Detections: 2391, Images: 3358 (connected)
+[INFO] [1781716126.398410507] [object_follower]: WAITING for detection
+[INFO] [1781716127.609598497] [object_follower]: WAITING for detection
+[INFO] [1781716128.818643403] [object_follower]: WAITING for detection
+[INFO] [1781716130.019835381] [object_follower]: WAITING for detection
+[INFO] [1781716130.280767050] [detection_receiver]: Status: connected, Received: 3393, Detections: 2391, Images: 3392 (connected)
+[INFO] [1781716131.231061463] [object_follower]: WAITING for detection
+[INFO] [1781716132.455331462] [object_follower]: WAITING for detection
+[INFO] [1781716133.666068014] [object_follower]: WAITING for detection
+[INFO] [1781716134.882875120] [object_follower]: WAITING for detection
+[INFO] [1781716135.263284414] [detection_receiver]: Status: connected, Received: 3428, Detections: 2391, Images: 3427 (connected)
+[INFO] [1781716136.086052763] [object_follower]: WAITING for detection
+[INFO] [1781716137.297535956] [object_follower]: WAITING for detection
+[INFO] [1781716138.511268723] [object_follower]: WAITING for detection
+[INFO] [1781716139.717122363] [object_follower]: WAITING for detection
+[INFO] [1781716140.278420296] [detection_receiver]: Status: connected, Received: 3462, Detections: 2391, Images: 3460 (connected)
+[INFO] [1781716140.927949556] [object_follower]: WAITING for detection
+[INFO] [1781716142.141641879] [object_follower]: WAITING for detection
+[INFO] [1781716143.350660787] [object_follower]: WAITING for detection
+[INFO] [1781716144.563681707] [object_follower]: WAITING for detection
+[INFO] [1781716145.263030904] [detection_receiver]: Status: connected, Received: 3496, Detections: 2394, Images: 3495 (connected)
+[INFO] [1781716145.786740171] [object_follower]: WAITING for detection
+[INFO] [1781716146.982252547] [object_follower]: WAITING for detection
+[INFO] [1781716148.184383023] [object_follower]: WAITING for detection
+[INFO] [1781716149.392825900] [object_follower]: WAITING for detection
+[INFO] [1781716150.274595088] [detection_receiver]: Status: connected, Received: 3531, Detections: 2394, Images: 3529 (connected)
+[INFO] [1781716150.600353071] [object_follower]: WAITING for detection
+[INFO] [1781716151.803436637] [object_follower]: WAITING for detection
+[INFO] [1781716153.008641921] [object_follower]: WAITING for detection
+[INFO] [1781716154.208803404] [object_follower]: WAITING for detection
+[INFO] [1781716155.267310839] [detection_receiver]: Status: connected, Received: 3565, Detections: 2395, Images: 3564 (connected)
+[INFO] [1781716155.403664806] [object_follower]: WAITING for detection
+[INFO] [1781716156.616908228] [object_follower]: WAITING for detection
+[INFO] [1781716157.822828209] [object_follower]: WAITING for detection
+[INFO] [1781716159.015208726] [object_follower]: WAITING for detection
+[INFO] [1781716160.231403760] [object_follower]: WAITING for detection
+[INFO] [1781716160.271123409] [detection_receiver]: Status: connected, Received: 3599, Detections: 2395, Images: 3598 (connected)
+[INFO] [1781716161.456911917] [object_follower]: WAITING for detection
+[INFO] [1781716162.659494620] [object_follower]: WAITING for detection
+[INFO] [1781716163.867197478] [object_follower]: WAITING for detection
+[INFO] [1781716165.083270762] [object_follower]: WAITING for detection
+[INFO] [1781716165.267756324] [detection_receiver]: Status: connected, Received: 3634, Detections: 2397, Images: 3633 (connected)
+[INFO] [1781716166.294924972] [object_follower]: WAITING for detection
+[INFO] [1781716167.511819042] [object_follower]: WAITING for detection
+[INFO] [1781716168.747147502] [object_follower]: WAITING for detection
+[INFO] [1781716169.991995924] [object_follower]: WAITING for detection
+[INFO] [1781716170.299302186] [detection_receiver]: Status: connected, Received: 3667, Detections: 2406, Images: 3666 (connected)
+[INFO] [1781716171.192900329] [object_follower]: HOLD dist=799mm err=+25px
+[INFO] [1781716172.408373669] [object_follower]: WAITING for detection
+[INFO] [1781716173.621742307] [object_follower]: HOLD dist=805mm err=+26px
+[INFO] [1781716174.844790281] [object_follower]: FOLLOW dist=1428mm err=-45px
+[INFO] [1781716175.277692228] [detection_receiver]: Status: connected, Received: 3701, Detections: 2423, Images: 3699 (connected)
+[INFO] [1781716176.049734146] [object_follower]: WAITING for detection
+[INFO] [1781716177.269150332] [object_follower]: WAITING for detection
+[INFO] [1781716178.478222914] [object_follower]: WAITING for detection
+[INFO] [1781716179.680140430] [object_follower]: WAITING for detection
+[INFO] [1781716180.266605720] [detection_receiver]: Status: connected, Received: 3735, Detections: 2425, Images: 3734 (connected)
+[INFO] [1781716180.900835824] [object_follower]: WAITING for detection
+[INFO] [1781716182.102641808] [object_follower]: WAITING for detection
+[INFO] [1781716183.312787374] [object_follower]: WAITING for detection
+[INFO] [1781716184.541616712] [object_follower]: WAITING for detection
+[INFO] [1781716185.263157244] [detection_receiver]: Status: connected, Received: 3768, Detections: 2425, Images: 3767 (connected)
+[INFO] [1781716185.779900005] [object_follower]: WAITING for detection
+[INFO] [1781716186.999992262] [object_follower]: WAITING for detection
+[INFO] [1781716188.204309012] [object_follower]: WAITING for detection
+[INFO] [1781716189.418709243] [object_follower]: WAITING for detection
+[INFO] [1781716190.337809695] [detection_receiver]: Status: connected, Received: 3801, Detections: 2425, Images: 3800 (connected)
+[INFO] [1781716190.643027482] [object_follower]: WAITING for detection
+[INFO] [1781716191.892875683] [object_follower]: WAITING for detection
+[INFO] [1781716193.129146173] [object_follower]: WAITING for detection
+[INFO] [1781716194.380832904] [object_follower]: WAITING for detection
+[INFO] [1781716195.268708587] [detection_receiver]: Status: connected, Received: 3834, Detections: 2425, Images: 3833 (connected)
+[INFO] [1781716195.637254474] [object_follower]: WAITING for detection
+[INFO] [1781716196.894101193] [object_follower]: WAITING for detection
+[INFO] [1781716198.112478623] [object_follower]: WAITING for detection
+[INFO] [1781716199.380097764] [object_follower]: WAITING for detection
+[INFO] [1781716200.263519105] [detection_receiver]: Status: connected, Received: 3867, Detections: 2425, Images: 3866 (connected)
+[INFO] [1781716200.633402086] [object_follower]: WAITING for detection
+[INFO] [1781716201.897767883] [object_follower]: WAITING for detection
+[INFO] [1781716203.115975190] [object_follower]: WAITING for detection
+[INFO] [1781716204.347710377] [object_follower]: WAITING for detection
+[INFO] [1781716205.265313669] [detection_receiver]: Status: connected, Received: 3900, Detections: 2425, Images: 3899 (connected)
+[INFO] [1781716205.562729293] [object_follower]: WAITING for detection
+[INFO] [1781716206.795578618] [object_follower]: WAITING for detection
+[INFO] [1781716208.019549071] [object_follower]: WAITING for detection
+[INFO] [1781716209.259426472] [object_follower]: WAITING for detection
+[INFO] [1781716210.282433161] [detection_receiver]: Status: connected, Received: 3932, Detections: 2425, Images: 3931 (connected)
+[INFO] [1781716210.466663736] [object_follower]: WAITING for detection
+[INFO] [1781716211.725469531] [object_follower]: WAITING for detection
+[INFO] [1781716212.937311242] [object_follower]: WAITING for detection
+[INFO] [1781716214.140096011] [object_follower]: WAITING for detection
+[INFO] [1781716215.269985453] [detection_receiver]: Status: connected, Received: 3966, Detections: 2425, Images: 3964 (connected)
+[INFO] [1781716215.395098949] [object_follower]: WAITING for detection
+[INFO] [1781716216.641059787] [object_follower]: WAITING for detection
+[INFO] [1781716217.844584900] [object_follower]: WAITING for detection
+[INFO] [1781716219.073251810] [object_follower]: WAITING for detection
+[INFO] [1781716220.263544224] [detection_receiver]: Status: connected, Received: 3999, Detections: 2425, Images: 3998 (connected)
+[INFO] [1781716220.312910789] [object_follower]: WAITING for detection
+[INFO] [1781716221.557657142] [object_follower]: WAITING for detection
+[INFO] [1781716222.803578470] [object_follower]: WAITING for detection
+[INFO] [1781716224.056485347] [object_follower]: WAITING for detection
+[INFO] [1781716225.265056181] [detection_receiver]: Status: connected, Received: 4032, Detections: 2425, Images: 4031 (connected)
+[INFO] [1781716225.269701333] [object_follower]: WAITING for detection
+[INFO] [1781716226.526761325] [object_follower]: WAITING for detection
+[INFO] [1781716227.776624865] [object_follower]: WAITING for detection
+[INFO] [1781716229.027720574] [object_follower]: WAITING for detection
+[INFO] [1781716230.257327267] [object_follower]: WAITING for detection
+[INFO] [1781716230.299987949] [detection_receiver]: Status: connected, Received: 4065, Detections: 2425, Images: 4064 (connected)
+[INFO] [1781716231.480937260] [object_follower]: WAITING for detection
+[INFO] [1781716232.719786726] [object_follower]: WAITING for detection
+[INFO] [1781716233.937542312] [object_follower]: WAITING for detection
+[INFO] [1781716234.870009394] [object_follower]: Stopping...
+[INFO] [1781716234.877239009] [object_follower]: Sitting down...
+[INFO] [1781716235.298865241] [detection_receiver]: Status: connected, Received: 4098, Detections: 2425, Images: 4096 (connected)
+[INFO] [1781716240.288801127] [detection_receiver]: Status: connected, Received: 4131, Detections: 2425, Images: 4130 (connected)
+[INFO] [1781716241.949284775] [object_follower]: Robot in passive mode
+
+Cleaning up...
+scripts/start_object_tracking.sh: line 109: 2190599 Killed                  python3 /home/robot/hexplorer/tracking/detection_receiver.py --with-images
+Cleanup complete

@@ -1,0 +1,43 @@
+# EllipseLIO /analytics snapshot — live run 2026-06-18 (robot walking, following a person)
+# Captured from: ros2 topic echo /analytics --qos-reliability best_effort
+
+imu_freq: 218          # Hz — IMU input (healthy, ~200 nominal)
+lid_freq: 4            # Hz — LiDAR reaching the node (nominal 10 — BOTTLENECK)
+odom_freq: 4           # Hz — odometry output (= lid_freq)
+cams_freq: []          # no camera used by EllipseLIO (LiDAR+IMU only)
+
+map_size: 161206       # accumulated map points
+oct_num: 194395        # i-octree nodes
+scan_size: 1280        # points per processed scan (downsampled from ~1767 raw)
+buffer_size: 0
+scan_time: 0.09994046  # s — synthesized intra-frame span (= 1/rate, patch working)
+
+# Registration / EKF quality
+res_mean: 0.04165      # m — mean residual (~4 cm)
+kf_iterations: 10      # EKF iterations (at the cap)
+obs_score: 1.0         # observability (good)
+vert_score: 0.86558    # vertical observability
+bin_score: 0.371
+
+# Ellipsoid-representation features
+num_planes: 731
+num_lines: 103
+num_balls: 203
+num_feats: 1037
+num_reject: 243
+
+# Point weights / ranges
+wt_mean: 4.527  wt_std: 2.084  wt_min: 1.0  wt_max: 12.456
+rng_min: 1.0  rng_max: 2576.49  rng_mean: 828.67   # mm — tight space (mean 0.83 m, max 2.6 m)
+
+# Per-scan timing (seconds) — REAL-TIME with large margin
+imu_time:   0.0001237   imu_mean:   0.0002512   imu_max:   0.008685
+state_time: 0.0271589   state_mean: 0.0136432   state_max: 0.035266
+map_time:   0.0052550   map_mean:   0.0022189   map_max:   0.020913
+total_time: 0.0325376   total_mean: 0.0161133   total_max: 0.045548   # 16 ms mean / 45 ms max
+
+lid_offset: 0.0
+imu_offset: 0.0
+
+# Final pose (/ellipselio_odom): x=-0.893 y=1.274 z=0.019 (m); position covariance ~1e-5
+# z drifted to ~+0.34 m mid-walk then recovered to ~+0.02 m (deskew disabled + gait).
