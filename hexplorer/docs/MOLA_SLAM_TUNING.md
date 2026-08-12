@@ -1,5 +1,8 @@
 # MOLA-SLAM Tuning Guide
 
+> **Legacy.** Fast-LIO2 replaced MOLA on 2026-03-24 - see `FASTLIO_SETUP_LOG.md`.
+> This guide applies to `start_mola_slam_legacy.sh` only.
+
 ## Configuration File
 
 ```
@@ -98,7 +101,7 @@ remove_voxels_farther_than: 0         # 0 = map grows forever
 2. Restart MOLA:
    ```bash
    pkill -9 -f mola-cli
-   bash ~/hexplorer/scripts/start_mola_slam.sh
+   bash ~/hexplorer/scripts/start_mola_slam_legacy.sh
    ```
 
 3. Monitor:

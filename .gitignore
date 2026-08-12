@@ -51,7 +51,7 @@ build/
 .DS_Store
 Thumbs.db
 
-# Secrets - NEVER commit these
+# Secrets - NEVER commit these (.env.example is the committed template)
 .env
 *.pem
 *.key
@@ -66,9 +66,8 @@ credentials.json
 librealsense-2.55/
 librealsense-2.55.tar.gz
 
-# Claude (allow CLAUDE.md for documentation)
-.claude/*
-!.claude/CLAUDE.md
+# Claude local notes - working scratch, not project documentation
+.claude/
 
 # ROS logs
 .ros/

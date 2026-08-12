@@ -48,8 +48,8 @@ source /home/robot/robot_controller_release/ros2_packages/setup.bash
 source ~/fastlio_ws/install/setup.bash 2>/dev/null || true
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 
-# Check .env file
-if [ ! -f "$HEXPLORER_DIR/voice/.env" ]; then
+# Check .env file (Jetson settings come from hexplorer/.env via common.sh)
+if [ ! -f "$HEXPLORER_DIR/voice/.env" ] && [ -z "$ELEVENLABS_API_KEY" ]; then
     echo "ERROR: Missing ~/hexplorer/voice/.env"
     echo "Create it with:"
     echo "  ELEVENLABS_API_KEY=sk_your_key_here"

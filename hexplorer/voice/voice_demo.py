@@ -34,11 +34,21 @@ import argparse
 
 HEXPLORER_DIR = os.path.expanduser("~/hexplorer")
 SCRIPT_DIR = os.path.join(HEXPLORER_DIR, "scripts")
+_HERE = os.path.dirname(os.path.abspath(__file__))
+
+# Credentials come from the environment. hexplorer/.env holds the shared Jetson settings,
+# voice/.env holds the ElevenLabs keys. Neither is committed - see hexplorer/.env.example.
+try:
+    from dotenv import load_dotenv
+    load_dotenv(os.path.join(_HERE, os.pardir, ".env"))
+    load_dotenv(os.path.join(_HERE, ".env"))
+except ImportError:
+    pass
 
 # Jetson SSH
-JETSON_IP = "192.168.1.20"
-JETSON_USER = "robot"
-JETSON_PASS = "123"
+JETSON_IP = os.environ.get("JETSON_IP", "192.168.1.20")
+JETSON_USER = os.environ.get("JETSON_USER", "robot")
+JETSON_PASS = os.environ.get("JETSON_PASS", "")
 
 # Wake word detection
 WAKE_PHRASE = "hey robot"
@@ -670,14 +680,7 @@ def main():
                         help="Debug mode: no robot commands, print actions only")
     args = parser.parse_args()
 
-    # Load environment
-    try:
-        from dotenv import load_dotenv
-        env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
-        load_dotenv(env_path)
-    except ImportError:
-        pass
-
+    # .env files are loaded at import time, before the config constants above
     api_key = os.environ.get("ELEVENLABS_API_KEY")
     agent_id = os.environ.get("AGENT_ID")
 
@@ -686,6 +689,9 @@ def main():
         sys.exit(1)
     if not agent_id:
         print("ERROR: AGENT_ID not set. Create an agent at elevenlabs.io and add ID to .env")
+        sys.exit(1)
+    if not JETSON_PASS:
+        print("ERROR: JETSON_PASS not set. Add it to ~/hexplorer/.env (see .env.example)")
         sys.exit(1)
 
     print("=========================================")

@@ -1,7 +1,10 @@
 # Object Search System Setup Log
 
-**Date:** 2026-02-19 (created), 2026-02-25 (tested)
-**Status:** TESTED — core functionality verified on robot
+**Date:** 2026-02-19 (created), 2026-02-25 (tested), 2026-03-24 (moved to Fast-LIO2)
+**Status:** Core functionality verified on robot in Feb 2026 against MOLA odometry. The
+odometry source has since changed to Fast-LIO2 — same `/lidar_odometry/pose` topic, so no
+code changes were needed, but the search has not been re-run end to end since. References
+to MOLA below describe the odometry in place at the time of testing.
 
 ## Overview
 

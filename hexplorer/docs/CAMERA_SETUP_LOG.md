@@ -32,5 +32,6 @@ bash ~/hexplorer/scripts/start_sensor_demo.sh
 
 ## SSH to Jetson
 ```bash
-sshpass -p "123" ssh robot@192.168.1.20
+source ~/hexplorer/.env
+sshpass -p "$JETSON_PASS" ssh "$JETSON_USER@$JETSON_IP"
 ```

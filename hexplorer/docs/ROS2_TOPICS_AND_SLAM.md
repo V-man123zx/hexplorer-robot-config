@@ -1,6 +1,40 @@
-# ROS2 Topics & MOLA SLAM Reference
+# ROS2 Topics & Odometry Reference
 
-## MOLA SLAM & Odometry
+## Odometry
+
+**Fast-LIO2 is the odometry system in use** (since 2026-03-24). It fuses the Livox LiDAR
+with the Mid360's IMU through an error-state EKF. See `FASTLIO_SETUP_LOG.md`.
+
+```
+/livox/lidar  +  /livox/imu
+        |
+        v
+  Fast-LIO2 (fastlio_mapping, hexplorer_mid360.yaml)
+    - Built-in voxel filtering, no filterpass stage needed
+    - iKD-tree map, error-state EKF with IMU propagation
+        |
+        +------> /Odometry            (raw, camera_init->body)
+        |
+        v  odom_relay.py (frame remap + TF broadcast)
+        +------> /lidar_odometry/pose (Odometry, odom->base_link)  <-- USE THIS
+        +------> /tf                  (odom->base_link)
+```
+
+Both systems publish pose on `/lidar_odometry/pose`, so downstream nodes
+(`smart_follower.py`, `object_searcher.py`) work with either.
+
+```bash
+bash ~/hexplorer/scripts/start_fastlio.sh          # current
+bash ~/hexplorer/scripts/start_fastlio.sh --rviz
+```
+
+---
+
+## MOLA (legacy)
+
+> Superseded by Fast-LIO2. Kept as a fallback at `scripts/start_mola_slam_legacy.sh`.
+> MOLA is LiDAR-only, and the hexapod's gait oscillation produced scan-matching glitches
+> that the IMU fusion in Fast-LIO2 removes. The sections below describe the old setup.
 
 ### What is MOLA?
 
@@ -50,12 +84,12 @@ MOLA-LO on this robot is technically **odometry**, not full SLAM:
 - It does **NOT** do loop closure (recognizing previously visited places)
 - Over long distances, drift will accumulate
 
-### Quick Start
+### Quick Start (legacy)
 
 ```bash
-bash ~/hexplorer/scripts/start_mola_slam.sh              # Default
-bash ~/hexplorer/scripts/start_mola_slam.sh --gui         # With MOLA GUI
-bash ~/hexplorer/scripts/start_mola_slam.sh --no-rviz     # No RViz
+bash ~/hexplorer/scripts/start_mola_slam_legacy.sh              # Default
+bash ~/hexplorer/scripts/start_mola_slam_legacy.sh --gui        # With MOLA GUI
+bash ~/hexplorer/scripts/start_mola_slam_legacy.sh --no-rviz    # No RViz
 ```
 
 ---
@@ -67,18 +101,25 @@ bash ~/hexplorer/scripts/start_mola_slam.sh --no-rviz     # No RViz
 | Topic | Type | Source | Rate | Description |
 |-------|------|--------|------|-------------|
 | `/livox/lidar` | PointCloud2 | livox_tcp_receiver.py | ~10 Hz | Raw LiDAR from Jetson (frame: `livox_frame`, ~15k pts) |
-| `/livox/lidar_filtered` | PointCloud2 | filterpass.py | ~10 Hz | Intensity+angle filtered LiDAR (~5k pts) |
+| `/livox/imu` | Imu | imu_tcp_receiver.py | ~200 Hz | Mid360 IMU, accel + gyro (Fast-LIO2 input) |
+| `/livox/lidar_filtered` | PointCloud2 | filterpass.py | ~10 Hz | Intensity+angle filtered LiDAR (~5k pts, MOLA only) |
 | `/camera/color/image_raw` | Image | depth_bridge_receiver.py | ~6 Hz | 640x480 BGR8 color (only in --no-track mode) |
 | `/camera/depth/image_raw` | Image | depth_bridge_receiver.py | ~6 Hz | 640x480 16UC1 depth in mm (only in --no-track mode) |
 | `/camera/points` | PointCloud2 | depth_bridge_receiver.py | ~2-3 Hz | XYZRGB pointcloud (~180k pts, only in --no-track mode) |
 
-### MOLA Odometry Topics
+### Odometry Topics
 
 | Topic | Type | Source | Rate | Description |
 |-------|------|--------|------|-------------|
-| `/lidar_odometry/pose` | Odometry | MOLA (StateEstimationSimple) | ~20-30 Hz | **Primary pose output** - position+orientation |
-| `/lidar_odometry/localmap_points` | PointCloud2 | MOLA mapping | ~1-2 Hz | Accumulated keyframe map for visualization |
-| `/tf` | TFMessage | MOLA + static publishers | ~20-30 Hz | Transform tree: `map->odom->base_link->livox_frame` |
+| `/lidar_odometry/pose` | Odometry | odom_relay.py (Fast-LIO2) | ~10 Hz | **Primary pose output** - position+orientation |
+| `/Odometry` | Odometry | Fast-LIO2 | ~10 Hz | Raw output before frame remap (`camera_init->body`) |
+| `/cloud_registered` | PointCloud2 | Fast-LIO2 | ~10 Hz | Current scan registered into the map frame |
+| `/Laser_map` | PointCloud2 | Fast-LIO2 | ~1 Hz | Accumulated map |
+| `/path` | Path | Fast-LIO2 | ~10 Hz | Trajectory |
+| `/tf` | TFMessage | odom_relay.py + static publishers | ~10 Hz | Transform tree: `map->odom->base_link->livox_frame` |
+
+Legacy MOLA published the same primary pose topic, plus
+`/lidar_odometry/localmap_points` for its keyframe map.
 
 ### Object Tracking Topics
 
@@ -108,7 +149,7 @@ bash ~/hexplorer/scripts/start_mola_slam.sh --no-rviz     # No RViz
 
 ```
 map
-  odom                              (MOLA puts motion estimate here)
+  odom                              (odometry motion estimate lands here)
     base_link
       livox_frame                   (0.2m above base_link)
       camera_depth_optical_frame    (rotated: qx=-0.5, qy=0.5, qz=-0.5, qw=0.5)

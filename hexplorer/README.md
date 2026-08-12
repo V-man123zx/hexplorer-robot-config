@@ -1,6 +1,8 @@
 # Hexplorer Robot Software
 
-Organized software for the Dobot Hexplorer hexapod robot with RealSense D435 camera, Livox Mid360 LiDAR, and object tracking capabilities.
+Command reference for the Dobot Hexplorer hexapod with RealSense D435 camera and Livox
+Mid360 LiDAR. Hardware layout, network design and setup are in the [top-level
+README](../README.md).
 
 ## Folder Structure
 
@@ -9,11 +11,16 @@ hexplorer/
 ├── sensors/          # Sensor publishers and viewers
 ├── tracking/         # Object detection and following
 ├── navigation/       # Autonomous navigation and dances
-├── bridges/          # TCP bridges for cross-machine communication
+├── bridges/          # TCP bridges and the odometry frame relay
+├── voice/            # ElevenLabs voice control
+├── ellipselio/       # EllipseLIO odometry evaluation
 ├── config/           # RViz configurations
 ├── docs/             # Setup logs and documentation
 └── scripts/          # Launch scripts
 ```
+
+Copy `.env.example` to `.env` and set `JETSON_PASS` before running anything — every script
+sources it through `scripts/common.sh`.
 
 ## Quick Start
 
@@ -52,7 +59,8 @@ DETECT_MODE=color TARGET=red bash ~/hexplorer/scripts/start_object_tracking.sh
 bash ~/hexplorer/scripts/start_object_tracking.sh --smart
 ```
 
-### Object Search (scan-navigate cycle to find objects) — UNTESTED
+### Object Search (scan-navigate cycle to find objects)
+Search logic was tested in Feb 2026 and has not been re-run since the switch to Fast-LIO2.
 ```bash
 # Search for person (default)
 bash ~/hexplorer/scripts/start_object_search.sh
@@ -67,14 +75,24 @@ DETECT_MODE=yolo-world TARGET="red toolbox" bash ~/hexplorer/scripts/start_objec
 bash ~/hexplorer/scripts/start_object_search.sh --rviz
 ```
 
-### MOLA LiDAR Odometry (SLAM)
+### Fast-LIO2 LiDAR-Inertial Odometry
 ```bash
-bash ~/hexplorer/scripts/start_mola_slam.sh
+bash ~/hexplorer/scripts/start_fastlio.sh
+bash ~/hexplorer/scripts/start_fastlio.sh --rviz
+
+# MOLA (legacy, LiDAR-only — superseded, see docs/FASTLIO_SETUP_LOG.md)
+bash ~/hexplorer/scripts/start_mola_slam_legacy.sh
 ```
 
 ### Obstacle Avoidance Navigation
 ```bash
 bash ~/hexplorer/scripts/start_obstacle_avoidance.sh
+```
+
+### Voice Control
+```bash
+bash ~/hexplorer/scripts/start_voice_demo.sh
+bash ~/hexplorer/scripts/start_voice_demo.sh --debug   # no robot commands
 ```
 
 ### Macarena Dance
@@ -105,10 +123,14 @@ bash ~/hexplorer/scripts/start_macarena.sh
 | File | Description |
 |------|-------------|
 | `obstacle_avoidance.py` | Autonomous navigation avoiding obstacles |
-| `object_searcher.py` | Scan-navigate search for target objects (UNTESTED) |
+| `object_searcher.py` | Scan-navigate search for target objects |
 | `human_follower.py` | Follow a human using depth camera |
-| `frontier_explorer.py` | SLAM frontier detection |
 | `macarena_dance.py` | Macarena dance routine |
+
+### Voice (`voice/`)
+| File | Description |
+|------|-------------|
+| `voice_demo.py` | Wake word, ElevenLabs agent session, behaviour dispatch |
 
 ### Bridges (`bridges/`)
 | File | Description |
@@ -118,26 +140,31 @@ bash ~/hexplorer/scripts/start_macarena.sh
 | `livox_tcp_receiver.py` | Receives LiDAR data via TCP |
 | `imu_tcp_bridge.py` | Sends IMU data via TCP (runs on Jetson) |
 | `imu_tcp_receiver.py` | Receives IMU data via TCP |
+| `odom_relay.py` | Remaps Fast-LIO2 frames to `odom`/`base_link` and broadcasts TF |
 
 ### Configuration (`config/`)
 | File | Description |
 |------|-------------|
 | `sensor_visualization.rviz` | Full sensor demo RViz config |
 | `tracking_visualization.rviz` | Tracking-only RViz config |
-| `search_visualization.rviz` | Object search RViz config (UNTESTED) |
-| `mola_slam.rviz` | MOLA SLAM RViz config |
+| `search_visualization.rviz` | Object search RViz config |
+| `fastlio.rviz` | Fast-LIO2 odometry RViz config |
+| `mola_slam.rviz` | MOLA RViz config (legacy) |
 
 ### Scripts (`scripts/`)
 | File | Description |
 |------|-------------|
-| `common.sh` | Shared helpers: Jetson connectivity, process management |
-| `jetson_services.sh` | Persistent LiDAR services (auto-starts on Jetson boot) |
+| `common.sh` | Shared helpers: `.env` loading, Jetson connectivity, process management |
+| `jetson_services.sh` | Persistent LiDAR + IMU services (auto-start on Jetson boot) |
 | `start_sensor_demo.sh` | Full sensor demo (camera + LiDAR + tracking) |
 | `start_object_tracking.sh` | Object tracking with optional following |
 | `start_obstacle_avoidance.sh` | Autonomous obstacle avoidance |
-| `start_object_search.sh` | Object search with MOLA + LiDAR (UNTESTED) |
-| `start_mola_slam.sh` | MOLA LiDAR odometry/SLAM |
+| `start_object_search.sh` | Object search (odometry + tracking infra) |
+| `start_fastlio.sh` | Fast-LIO2 LiDAR-inertial odometry |
+| `start_mola_slam_legacy.sh` | MOLA LiDAR odometry (legacy) |
+| `start_voice_demo.sh` | Voice-controlled demo |
 | `start_macarena.sh` | Macarena dance routine |
+| `tracking_menu.sh`, `yolo_world_menu.sh` | Interactive menus over the tracking modes |
 
 ## Network Architecture
 
@@ -162,13 +189,15 @@ Jetson LiDAR services (driver + TCP bridge) run as a systemd service that auto-s
 | `/camera/depth/image_raw` | Image | Depth camera |
 | `/camera/points` | PointCloud2 | Camera pointcloud |
 | `/livox/lidar` | PointCloud2 | LiDAR pointcloud |
+| `/livox/imu` | Imu | LiDAR IMU (~200 Hz) |
 
-### MOLA Topics
+### Odometry Topics (Fast-LIO2)
 | Topic | Type | Description |
 |-------|------|-------------|
-| `/livox/lidar_filtered` | PointCloud2 | Filtered LiDAR (input to MOLA) |
-| `/lidar_odometry/pose` | Odometry | Robot pose estimate |
-| `/lidar_odometry/localmap_points` | PointCloud2 | Accumulated map |
+| `/lidar_odometry/pose` | Odometry | Robot pose estimate — subscribe to this |
+| `/Odometry` | Odometry | Raw Fast-LIO2 output before frame remap |
+| `/cloud_registered` | PointCloud2 | Registered scan |
+| `/Laser_map` | PointCloud2 | Accumulated map |
 
 ### Tracking Topics
 | Topic | Type | Description |
@@ -207,12 +236,15 @@ Jetson LiDAR services (driver + TCP bridge) run as a systemd service that auto-s
 ## Documentation
 
 See `docs/` folder:
-- `ROS2_TOPICS_AND_SLAM.md` - All ROS2 topics and MOLA SLAM explained
 - `HEXPLORER_CONTROL.md` - Robot control reference (states, topics, messages)
-- `MOLA_SLAM_SETUP_LOG.md` - MOLA SLAM architecture and usage
-- `MOLA_SLAM_TUNING.md` - MOLA ICP parameter tuning guide
+- `ROS2_TOPICS_AND_SLAM.md` - All ROS2 topics and the odometry pipeline
+- `FASTLIO_SETUP_LOG.md` - Fast-LIO2 architecture and usage (current odometry)
 - `CAMERA_SETUP_LOG.md` - RealSense camera known issues
 - `DEPTH_BRIDGE_SETUP_LOG.md` - TCP depth bridge setup
 - `LIDAR_SETUP_LOG.md` - Livox LiDAR setup
+- `OBJECT_SEARCH_SETUP_LOG.md` - Object search design and test notes
 - `WIFI_BOOT_SETUP_LOG.md` - WiFi configuration
 - `XRDP_SETUP_LOG.md` - Remote desktop setup
+- `MOLA_SLAM_SETUP_LOG.md`, `MOLA_SLAM_TUNING.md` - MOLA odometry (legacy)
+
+The EllipseLIO evaluation lives separately in [`ellipselio/`](ellipselio/).

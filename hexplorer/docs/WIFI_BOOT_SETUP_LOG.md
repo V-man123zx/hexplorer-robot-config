@@ -15,14 +15,17 @@ WiFi configured for "Client mode primary, AP secondary" - connects to external n
 
 | Mode | IP Address | Network | Purpose |
 |------|------------|---------|---------|
-| Client | varies | GennFlex | RDP access, internet |
-| Access Point | 192.168.12.1 | YJ-MiniHexV2-152 | Direct robot connection |
+| Client | varies | site WiFi | RDP access, internet |
+| Access Point | 192.168.12.1 | YJ-MiniHex<unit> | Direct robot connection |
 
 ### Access Point Details
-- **SSID:** YJ-MiniHexV2-152
-- **Password:** 1234abcd
+- **SSID:** `YJ-MiniHex<unit>` (factory SSID, differs per robot)
+- **Password:** set in `hostapd.conf` on the robot, not published here
 - **Channel:** 11
 - **Security:** WPA2-PSK
+
+The factory AP password is short and shipped identically across units. Change it in
+`hostapd.conf` before running the robot anywhere you don't control the radio space.
 
 ## Key Files
 

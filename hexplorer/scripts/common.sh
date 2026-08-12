@@ -2,9 +2,26 @@
 # Common functions for all hexplorer launch scripts
 # Source this file: source "$(dirname "$0")/common.sh"
 
-JETSON_IP="192.168.1.20"
-JETSON_USER="robot"
-JETSON_PASS="123"
+# Jetson connection settings. Copy hexplorer/.env.example to hexplorer/.env and fill in
+# JETSON_PASS, or export it before launching. The .env file is never committed.
+_HEXPLORER_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+HEXPLORER_ENV="${HEXPLORER_ENV:-$_HEXPLORER_ROOT/.env}"
+if [ -f "$HEXPLORER_ENV" ]; then
+    set -a
+    . "$HEXPLORER_ENV"
+    set +a
+fi
+
+JETSON_IP="${JETSON_IP:-192.168.1.20}"
+JETSON_USER="${JETSON_USER:-robot}"
+JETSON_PASS="${JETSON_PASS:-}"
+
+if [ -z "$JETSON_PASS" ]; then
+    echo "ERROR: JETSON_PASS is not set." >&2
+    echo "  cp $_HEXPLORER_ROOT/.env.example $HEXPLORER_ENV" >&2
+    echo "  then set JETSON_PASS in it (or export JETSON_PASS before launching)." >&2
+    exit 1
+fi
 
 # Check if a process is running on Jetson
 # Uses bracket trick to prevent pgrep from matching the SSH shell's own command line

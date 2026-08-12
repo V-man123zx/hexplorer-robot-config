@@ -1,5 +1,9 @@
 # MOLA-SLAM Setup
 
+> **Legacy.** Superseded by Fast-LIO2 on 2026-03-24 - see `FASTLIO_SETUP_LOG.md`. MOLA's
+> LiDAR-only scan matching glitched on the hexapod's gait oscillation; fusing the Mid360
+> IMU fixed that. Launcher kept as `start_mola_slam_legacy.sh`.
+
 **Purpose:** LiDAR-only SLAM/odometry for the Hexplorer robot. Replaces Fast-LIO (which had IMU drift issues).
 
 **Repository:** https://github.com/Whan000/MOLA-SLAM
@@ -26,7 +30,7 @@ Jetson LiDAR services (driver + TCP bridge) run as a **systemd service** (`jetso
 ## Quick Start
 
 ```bash
-bash ~/hexplorer/scripts/start_mola_slam.sh
+bash ~/hexplorer/scripts/start_mola_slam_legacy.sh
 ```
 
 | Flag | Description |
