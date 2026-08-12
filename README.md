@@ -1,5 +1,6 @@
 # Hexplorer Robot Config
 Current connect ip with router: 192.168.8.123
+Username of minipc: robot
 Password of minipc: 123
 
 Sensing, odometry and autonomy software for a Dobot Hexplorer hexapod running ROS 2 Humble,
